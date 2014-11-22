@@ -43,33 +43,37 @@ TEXT notok<>(SB),NOSPLIT,$0
 	B		0(PC)
 
 TEXT runtime·open(SB),NOSPLIT,$0
-	MOVW	0(FP), R0
-	MOVW	4(FP), R1
-	MOVW	8(FP), R2
+	MOVW	name+0(FP), R0
+	MOVW	mode+4(FP), R1
+	MOVW	perm+8(FP), R2
 	MOVW	$SYS_open, R12
 	SWI	$0x80
+	MOVW	R0, ret+12(FP)
 	RET
 
 TEXT runtime·close(SB),NOSPLIT,$0
-	MOVW	0(FP), R0
+	MOVW	fd+0(FP), R0
 	MOVW	$SYS_close, R12
 	SWI	$0x80
+	MOVW	R0, ret+4(FP)
 	RET
 
 TEXT runtime·write(SB),NOSPLIT,$0
-	MOVW	0(FP), R0
-	MOVW	4(FP), R1
-	MOVW	8(FP), R2
+	MOVW	fd+0(FP), R0
+	MOVW	p+4(FP), R1
+	MOVW	n+8(FP), R2
 	MOVW	$SYS_write, R12
 	SWI	$0x80
+	MOVW	R0, ret+12(FP)
 	RET
 
 TEXT runtime·read(SB),NOSPLIT,$0
-	MOVW	0(FP), R0
-	MOVW	4(FP), R1
-	MOVW	8(FP), R2
+	MOVW	fd+0(FP), R0
+	MOVW	p+4(FP), R1
+	MOVW	n+8(FP), R2
 	MOVW	$SYS_read, R12
 	SWI	$0x80
+	MOVW	R0, ret+12(FP)
 	RET
 
 TEXT runtime·exit(SB),NOSPLIT,$-4
@@ -100,15 +104,16 @@ TEXT runtime·raise(SB),NOSPLIT,$24
 	RET
 
 TEXT runtime·mmap(SB),NOSPLIT,$0
-	MOVW	0(FP), R0
-	MOVW	4(FP), R1
-	MOVW	8(FP), R2
-	MOVW	12(FP), R3
-	MOVW	16(FP), R4
-	MOVW	20(FP), R5
+	MOVW	addr+0(FP), R0
+	MOVW	n+4(FP), R1
+	MOVW	prot+8(FP), R2
+	MOVW	flags+12(FP), R3
+	MOVW	fd+16(FP), R4
+	MOVW	off+20(FP), R5
 	MOVW	$0, R6 // off_t is uint64_t
 	MOVW	$SYS_mmap, R12
 	SWI	$0x80
+	MOVW	R0, ret+24(FP)
 	RET
 
 TEXT runtime·munmap(SB),NOSPLIT,$0
@@ -160,8 +165,6 @@ TEXT time·now(SB), 7, $32
 	MOVW	R2, 8(FP)
 	RET	
 
-// int64 nanotime(void) so really
-// void nanotime(int64 *nsec)
 TEXT runtime·nanotime(SB),NOSPLIT,$32
 	MOVW	$8(R13), R0  // timeval
 	MOVW	$0, R1  // zone
@@ -177,9 +180,8 @@ TEXT runtime·nanotime(SB),NOSPLIT,$32
 	ADD.S	R2, R0
 	ADC	R4, R1
 	
-	MOVW	0(FP), R3
-	MOVW	R0, 0(R3)
-	MOVW	R1, 4(R3)
+	MOVW	R0, 0(FP)
+	MOVW	R1, 4(FP)
 	RET
 
 // Sigtramp's job is to call the actual signal handler.
@@ -277,9 +279,11 @@ TEXT runtime·sysctl(SB),NOSPLIT,$0
 	SWI	$0x80
 	BCC     sysctl_ret
 	RSB     $0, R0, R0
+	MOVW	R0, ret+24(FP)
 	RET
 sysctl_ret:
 	MOVW	$0, R0
+	MOVW	R0, ret+24(FP)
 	RET
 
 // Thread related functions
@@ -296,11 +300,13 @@ TEXT runtime·bsdthread_create(SB),NOSPLIT,$0
 	MOVW	$0, R5	// paranoia
 	MOVW	$SYS_bsdthread_create, R12
 	SWI	$0x80
-	BCC     create_ret
-	RSB     $0, R0, R0
+	BCC		create_ret
+	RSB 	$0, R0, R0
+	MOVW	R0, ret+16(FP)
 	RET
 create_ret:
 	MOVW	$0, R0
+	MOVW	R0, ret+16(FP)
 	RET
 
 // The thread that bsdthread_create creates starts executing here,
@@ -318,6 +324,7 @@ TEXT runtime·bsdthread_start(SB),NOSPLIT,$0
 	//MOVW    R3, m
 	MOVW    R1, m_procid(R3) // thread port is m->procid
 	MOVW	m_g0(R3), g
+	MOVW	R3, g_m(g)
 	// ARM don't have runtime·stackcheck(SB)
 	// disable runfast mode of vfp
 	EOR     R12, R12
@@ -357,21 +364,25 @@ TEXT runtime·mach_msg_trap(SB),NOSPLIT,$0
 
 	MVN     $30, R12
 	SWI	$0x80
+	MOVW	R0, 28(FP)
 	RET
 
 TEXT runtime·mach_task_self(SB),NOSPLIT,$0
 	MVN     $27, R12 // task_self_trap
 	SWI	$0x80
+	MOVW	R0, 0(FP)
 	RET
 
 TEXT runtime·mach_thread_self(SB),NOSPLIT,$0
 	MVN 	$26, R12 // thread_self_trap
 	SWI	$0x80
+	MOVW	R0, 0(FP)
 	RET
 
 TEXT runtime·mach_reply_port(SB),NOSPLIT,$0
 	MVN 	$25, R12	// mach_reply_port
 	SWI	$0x80
+	MOVW	R0, 0(FP)
 	RET
 
 // Mach provides trap versions of the semaphore ops,
@@ -382,6 +393,7 @@ TEXT runtime·mach_semaphore_wait(SB),NOSPLIT,$0
 	MOVW	0(FP), R0
 	MVN 	$35, R12	// semaphore_wait_trap
 	SWI	$0x80
+	MOVW	R0, ret+4(FP)
 	RET
 
 // uint32 mach_semaphore_timedwait(uint32, uint32, uint32)
@@ -391,6 +403,7 @@ TEXT runtime·mach_semaphore_timedwait(SB),NOSPLIT,$0
 	MOVW	8(FP), R2
 	MVN 	$37, R12	// semaphore_timedwait_trap
 	SWI	$0x80
+	MOVW	R0, ret+12(FP)
 	RET
 
 // uint32 mach_semaphore_signal(uint32)
@@ -398,6 +411,7 @@ TEXT runtime·mach_semaphore_signal(SB),NOSPLIT,$0
 	MOVW    0(FP), R0
 	MVN 	$32, R12	// semaphore_signal_trap
 	SWI	$0x80
+	MOVW	R0, ret+4(FP)
 	RET
 
 // uint32 mach_semaphore_signal_all(uint32)
@@ -405,6 +419,7 @@ TEXT runtime·mach_semaphore_signal_all(SB),NOSPLIT,$0
 	MOVW	0(FP), R0
 	MVN 	$33, R12	// semaphore_signal_all_trap
 	SWI	$0x80
+	MOVW	R0, ret+4(FP)
 	RET
 
 // int32 runtime·kqueue(void)
@@ -412,19 +427,21 @@ TEXT runtime·kqueue(SB),NOSPLIT,$0
 	MOVW	$SYS_kqueue, R12
 	SWI	$0x80
 	RSB.CS	$0, R0, R0
+	MOVW	R0, ret+0(FP)
 	RET
 
-// int32 runtime·kevent(int kq, Kevent *changelist, int nchanges, Kevent *eventlist, int n events, Timespec *timeout)
+// int32 runtime·kevent(int kq, Kevent *changelist, int nchanges, Kevent *eventlist, int events, Timespec *timeout)
 TEXT runtime·kevent(SB),NOSPLIT,$0
 	MOVW	$SYS_kevent, R12
-	MOVW	0(FP), R0
-	MOVW	4(FP), R1
-	MOVW	8(FP), R2
-	MOVW	12(FP), R3
-	MOVW	16(FP), R4
-	MOVW	20(FP), R5
+	MOVW	kq+0(FP), R0
+	MOVW	changelist+4(FP), R1
+	MOVW	nchanges+8(FP), R2
+	MOVW	eventlist+12(FP), R3
+	MOVW	nevents+16(FP), R4
+	MOVW	timeout+20(FP), R5
 	SWI	$0x80
 	RSB.CS	$0, R0, R0
+	MOVW	R0, ret+24(FP)
 	RET
 
 // int32 runtime·closeonexec(int32 fd)

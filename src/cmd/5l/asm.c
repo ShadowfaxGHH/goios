@@ -33,8 +33,8 @@
 #include	"l.h"
 #include	"../ld/lib.h"
 #include	"../ld/elf.h"
+#include	"../ld/macho.h"
 #include	"../ld/dwarf.h"
-
 
 char linuxdynld[] = "/lib/ld-linux.so.3"; // 2 for OABI, 3 for EABI
 char freebsddynld[] = "/usr/libexec/ld-elf.so.1";
@@ -541,6 +541,8 @@ adddynlib(char *lib)
 		if(s->size == 0)
 			addstring(s, "");
 		elfwritedynent(linklookup(ctxt, ".dynamic", 0), DT_NEEDED, addstring(s, lib));
+	} else if(HEADTYPE == Hdarwin) {
+		machoadddynlib(lib);
 	} else {
 		diag("adddynlib: unsupported binary format");
 	}
@@ -549,7 +551,7 @@ adddynlib(char *lib)
 void
 asmb(void)
 {
-	uint32 symo;
+	uint32 symo, dwarfoff, machlink;
 	Section *sect;
 	LSym *sym;
 	int i;
@@ -585,6 +587,22 @@ asmb(void)
 	cseek(segdata.fileoff);
 	datblk(segdata.vaddr, segdata.filelen);
 
+	machlink = 0;
+	if(HEADTYPE == Hdarwin) {
+		if(debug['v'])
+			Bprint(&bso, "%5.2f dwarf\n", cputime());
+
+		if(!debug['w']) { // TODO(minux): enable DWARF Support
+			dwarfoff = rnd(HEADR+segtext.len, INITRND) + rnd(segdata.filelen, INITRND);
+			cseek(dwarfoff);
+
+			segdwarf.fileoff = cpos();
+			dwarfemitdebugsections();
+			segdwarf.filelen = cpos() - segdwarf.fileoff;
+		}
+		machlink = domacholink();
+	}
+
 	/* output symbol table */
 	symsize = 0;
 	lcsize = 0;
@@ -600,6 +618,9 @@ asmb(void)
 				goto ElfSym;
 		case Hplan9:
 			symo = segdata.fileoff+segdata.filelen;
+			break;
+		case Hdarwin:
+			symo = rnd(HEADR+segtext.filelen, INITRND)+rnd(segdata.filelen, INITRND)+machlink;
 			break;
 		ElfSym:
 			symo = segdata.fileoff+segdata.filelen;
@@ -663,6 +684,9 @@ asmb(void)
 	case Hopenbsd:
 	case Hnacl:
 		asmbelf(symo);
+		break;
+	case Hdarwin:
+		asmbmacho();
 		break;
 	}
 	cflush();

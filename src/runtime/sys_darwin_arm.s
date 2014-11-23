@@ -333,7 +333,7 @@ TEXT runtime·bsdthread_start(SB),NOSPLIT,$0
 	BL      runtime·exit1(SB)
 	RET
 
-// void bsdthread_register(void)
+// int32 bsdthread_register(void)
 // registers callbacks for threadstart (see bsdthread_create above
 // and wqthread and pthsize (not used).  returns 0 on success.
 TEXT runtime·bsdthread_register(SB),NOSPLIT,$0
@@ -345,11 +345,7 @@ TEXT runtime·bsdthread_register(SB),NOSPLIT,$0
 	MOVW	$0, R5	// dispatchqueue_offset
 	MOVW	$SYS_bsdthread_register, R12	// bsdthread_register
 	SWI	$0x80
-	BCC     reg_ret
-	MOVW	$1234, R0
-	MOVW	$1003, R1
-	MOVW	R0, (R1)	// fail hard
-reg_ret:
+	MOVW	R0, ret+0(FP)
 	RET
 
 // uint32 mach_msg_trap(void*, uint32, uint32, uint32, uint32, uint32, uint32)
@@ -361,7 +357,6 @@ TEXT runtime·mach_msg_trap(SB),NOSPLIT,$0
 	MOVW    16(FP), R4
 	MOVW    20(FP), R5
 	MOVW    24(FP), R6
-
 	MVN     $30, R12
 	SWI	$0x80
 	MOVW	R0, 28(FP)

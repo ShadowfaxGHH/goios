@@ -8,8 +8,7 @@
 // System call support for ARM, Darwin
 //
 
-// func Syscall(syscall uintptr, a1, a2, a3 uintptr) (r1, r2, err uintptr);
-
+// func Syscall(syscall uintptr, a1, a2, a3 uintptr) (r1, r2, err uintptr)
 TEXT	·Syscall(SB),NOSPLIT,$0-32
 	BL		runtime·entersyscall(SB)
 	MOVW	4(SP), R12
@@ -34,7 +33,7 @@ ok:
 	BL		runtime·exitsyscall(SB)
 	RET
 
-// func RawSyscall(trap uintptr, a1, a2, a3 uintptr) (r1, r2, err uintptr);
+// func RawSyscall(trap uintptr, a1, a2, a3 uintptr) (r1, r2, err uintptr)
 TEXT ·RawSyscall(SB),NOSPLIT,$0-32
 	MOVW	4(SP), R12	// syscall entry
 	MOVW	8(SP), R0
@@ -56,8 +55,7 @@ ok1:
 	MOVW	R0, 28(SP)	// errno
 	RET
 
-// func Syscall6(trap uintptr, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, err uintptr);
-// Actually Syscall5 but the rest of the code expects it to be named Syscall6.
+// func Syscall6(trap uintptr, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, err uintptr)
 TEXT	·Syscall6(SB),NOSPLIT,$0-44
 	BL		runtime·entersyscall(SB)
 	MOVW	4(SP), R12	// syscall entry
@@ -85,8 +83,7 @@ ok6:
 	BL		runtime·exitsyscall(SB)
 	RET
 
-// func RawSyscall6(trap uintptr, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, err uintptr);
-// Actually RawSyscall5 but the rest of the code expects it to be named RawSyscall6.
+// func RawSyscall6(trap uintptr, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, err uintptr)
 TEXT	·RawSyscall6(SB),NOSPLIT,$0-44
 	MOVW	4(SP), R12	// syscall entry
 	MOVW	8(SP), R0
@@ -111,6 +108,7 @@ ok2:
 	MOVW	R0, 40(SP)	// errno
 	RET
 
+// Actually Syscall7.
 TEXT	·Syscall9(SB),NOSPLIT,$0-56
 	BL runtime·entersyscall(SB)
 	MOVW	4(SP), R12	// syscall entry
@@ -124,51 +122,18 @@ TEXT	·Syscall9(SB),NOSPLIT,$0-56
 	SWI		$0x80
 	BCC		ok9
 	MOVW	$-1, R1
-	MOVW	R1, 36(SP)	// r1
+	MOVW	R1, 44(SP)	// r1
 	MOVW	$0, R2
-	MOVW	R2, 40(SP)	// r2
+	MOVW	R2, 48(SP)	// r2
 	//RSB		$0, R0, R0
-	MOVW	R0, 44(SP)	// errno
+	MOVW	R0, 52(SP)	// errno
 	BL		runtime·exitsyscall(SB)
 	RET
 ok9:
-	MOVW	R0, 36(SP) // r1
-	MOVW	R1, 40(SP)	// r2
+	MOVW	R0, 44(SP) // r1
+	MOVW	R1, 48(SP)	// r2
 	MOVW	$0, R0
-	MOVW	R0, 44(SP)	// errno
+	MOVW	R0, 52(SP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
-
-//#define SYS_LSEEK 199  /* from zsysnum_darwin_arm.go */
-//// func Seek(fd int, offset int64, whence int) (newoffset int64, errno int)
-//// Implemented in assembly to avoid allocation when
-//// taking the address of the return value newoffset.
-//// Underlying system call is
-////	llseek(int fd, int offhi, int offlo, int64 *result, int whence)
-//TEXT ·Seek(SB),7,$0
-//	BL	runtime·entersyscall(SB)
-//	MOVW	$SYS_LSEEK, R12	// syscall entry
-//	MOVW	4(SP), R0	// fd
-//	MOVW	12(SP), R1	// offset-high
-//	MOVW	8(SP), R2	// offset-low
-//	MOVW	$20(SP), R3
-//	MOVW	16(SP), R4	// whence
-//	SWI	$0x80
-//	MOVW	$0xfffff001, R6
-//	CMP	R6, R0
-//	BLS	okseek
-//	MOVW	$0, R1
-//	MOVW	R1, 20(SP)
-//	MOVW	R1, 24(SP)
-//	RSB	$0, R0, R0
-//	MOVW	R0, 28(SP)	// errno
-//	BL	runtime·exitsyscall(SB)
-//	RET
-//okseek:
-//	// system call filled in newoffset already
-//	MOVW	$0, R0
-//	MOVW	R0, 28(SP)	// errno
-//	BL	runtime·exitsyscall(SB)
-//	RET	
-
 

@@ -203,5 +203,20 @@ main(int argc, char *argv[])
 	}
 	Bflush(&bso);
 
+	// FIXME(minux): a dirty hack for iDevice native compiling
+	// without requiring the device to disable codesign enforcement.
+	if(nerrors == 0 && HEADTYPE == Hdarwin && thechar == '5') {
+		char *argv[4] = {"ldid", "-S", outfile};
+		if(debug['v']) {
+			int i;
+			quotefmtinstall();
+			Bprint(&bso, "code sign:");
+			for(i=0; i<nelem(argv)-1; i++)
+				Bprint(&bso, " %q", argv[i]);
+			Bprint(&bso, "\n");
+		}
+		runcmd(argv);
+	}
+
 	errorexit();
 }

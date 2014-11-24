@@ -722,7 +722,7 @@ main(int argc, char **argv)
 	}
 
 	if(streq(gohostarch, "arm"))
-		maxnbg = 1;
+		maxnbg = 2;
 
 	// The OS X 10.6 linker does not support external linking mode.
 	// See golang.org/issue/5130.

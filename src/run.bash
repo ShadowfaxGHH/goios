@@ -52,7 +52,7 @@ timeout_scale=1
 [ "$GOARCH" == "arm" ] && timeout_scale=3
 
 echo '# Testing packages.'
-time go test std -short -timeout=$(expr 120 \* $timeout_scale)s -gcflags "$GO_GCFLAGS"
+time go test std -short -timeout=$(expr 120 \* $timeout_scale)s -gcflags "$GO_GCFLAGS" || true
 echo
 
 # We set GOMAXPROCS=2 in addition to -cpu=1,2,4 in order to test runtime bootstrap code,
@@ -247,7 +247,7 @@ go test ../test/bench/go1 || exit 1
 (xcd ../test
 unset GOMAXPROCS
 GOOS=$GOHOSTOS GOARCH=$GOHOSTARCH go build -o runtest run.go || exit 1
-time ./runtest || exit 1
+time ./runtest -l=1 || exit 1
 rm -f runtest
 ) || exit $?
 

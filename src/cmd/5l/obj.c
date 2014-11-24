@@ -65,6 +65,7 @@ archinit(void)
 	case Hlinux:
 	case Hfreebsd:
 	case Hnacl:
+	case Hdarwin:
 		break;
 	}
 

@@ -296,10 +296,63 @@ elfsetupplt(void)
 int
 machoreloc1(Reloc *r, vlong sectoff)
 {
-	USED(r);
-	USED(sectoff);
+	uint32 v;
+	LSym *rs;
+	
+	rs = r->xsym;
 
-	return -1;
+	if(rs->type == SHOSTOBJ) {
+		if(rs->dynid < 0) {
+			diag("reloc %d to non-macho symbol %s type=%d", r->type, rs->name, rs->type);
+			return -1;
+		}
+		v = rs->dynid;			
+		v |= 1<<27; // external relocation
+	} else {
+		v = rs->sect->extnum;
+		if(v == 0) {
+			diag("reloc %d to symbol %s in non-macho section %s type=%d", r->type, rs->name, rs->sect->name, rs->type);
+			return -1;
+		}
+	}
+
+	switch(r->type) {
+	default:
+		return -1;
+	case R_ADDR:
+		v |= MACHO_GENERIC_RELOC_VANILLA<<28;
+		break;
+	//case R_CALL:
+	//case R_PCREL:
+	//	v |= 1<<24; // pc-relative bit
+	//	v |= MACHO_GENERIC_RELOC_VANILLA<<28;
+	//	break;
+	case R_CALLARM:
+		v |= 1<<24; // pc-relative bit
+		v |= MACHO_ARM_RELOC_BR24<<28;
+		break;
+	}
+	
+	switch(r->siz) {
+	default:
+		return -1;
+	case 1:
+		v |= 0<<25;
+		break;
+	case 2:
+		v |= 1<<25;
+		break;
+	case 4:
+		v |= 2<<25;
+		break;
+	case 8:
+		v |= 3<<25;
+		break;
+	}
+
+	LPUT(sectoff);
+	LPUT(v);
+	return 0;
 }
 
 
@@ -657,6 +710,10 @@ asmb(void)
 
 				cflush();
 			}
+			break;
+		case Hdarwin:
+			if(linkmode == LinkExternal)
+				machoemitreloc();
 			break;
 		}
 	}

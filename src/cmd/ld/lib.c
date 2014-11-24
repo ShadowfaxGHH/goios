@@ -610,7 +610,10 @@ hostlink(void)
 		argv[argc++] = "-s";
 	}
 	if(HEADTYPE == Hdarwin)
-		argv[argc++] = "-Wl,-no_pie,-pagezero_size,4000000";
+		if(thechar != '5')
+			argv[argc++] = "-Wl,-no_pie,-pagezero_size,4000000";
+		else
+			argv[argc++] = "-Wl,-pagezero_size,4000000";
 	if(HEADTYPE == Hopenbsd)
 		argv[argc++] = "-Wl,-nopie";
 	

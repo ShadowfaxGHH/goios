@@ -301,7 +301,7 @@ machoreloc1(Reloc *r, vlong sectoff)
 	
 	rs = r->xsym;
 
-	if(rs->type == SHOSTOBJ) {
+	if(rs->type == SHOSTOBJ || r->type == R_CALLARM) {
 		if(rs->dynid < 0) {
 			diag("reloc %d to non-macho symbol %s type=%d", r->type, rs->name, rs->type);
 			return -1;
@@ -322,11 +322,6 @@ machoreloc1(Reloc *r, vlong sectoff)
 	case R_ADDR:
 		v |= MACHO_GENERIC_RELOC_VANILLA<<28;
 		break;
-	//case R_CALL:
-	//case R_PCREL:
-	//	v |= 1<<24; // pc-relative bit
-	//	v |= MACHO_GENERIC_RELOC_VANILLA<<28;
-	//	break;
 	case R_CALLARM:
 		v |= 1<<24; // pc-relative bit
 		v |= MACHO_ARM_RELOC_BR24<<28;

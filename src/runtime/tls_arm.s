@@ -74,3 +74,9 @@ TEXT runtime·load_g(SB),NOSPLIT,$0
 	ADD	R11, R0
 	MOVW	0(R0), g
 	RET
+
+#ifdef TLSG_IS_VARIABLE
+// I don't understand why android/arm doesn't need this definition.
+// In case this breaks android/arm port, change ifdef to use GOOS_darwin only.
+GLOBL runtime·tlsg+0(SB), NOPTR, $4
+#endif

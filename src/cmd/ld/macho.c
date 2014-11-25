@@ -367,7 +367,7 @@ asmbmacho(void)
 		break;
 	case '5':
 		mh->cpu = MACHO_CPU_ARM;
-		mh->subcpu = MACHO_SUBCPU_ARM;
+		mh->subcpu = MACHO_SUBCPU_ARMV7;
 		break;
 	}
 	

@@ -376,6 +376,14 @@ archreloc(Reloc *r, LSym *s, vlong *val)
 				diag("missing section for %s", rs->name);
 			r->xsym = rs;
 
+			// ld64 for arm seems to want the symbol table to contain offset
+			// into the section rather than pseudo virtual address that contains
+			// the section load address.
+			// we need to compensate that by removing the instruction's address
+			// from addend.
+			if(HEADTYPE == Hdarwin)
+				r->xadd -= symaddr(s) + r->off;
+
 			*val = braddoff((0xff000000U & (uint32)r->add), 
 							(0xffffff & (uint32)(r->xadd / 4)));
 			return 0;

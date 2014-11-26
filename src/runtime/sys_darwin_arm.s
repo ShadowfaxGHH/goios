@@ -193,6 +193,26 @@ TEXT runtime·nanotime(SB),NOSPLIT,$32
 //	 R3   	siginfo
 //	 -4(FP)	context, beware that 0(FP) is the saved LR
 TEXT runtime·sigtramp(SB),NOSPLIT,$0
+	// this might be called in external code context,
+	// where g is not set.
+	// first save R0, because runtime·load_g will clobber it
+	MOVM.DB.W [R0], (R13)
+	MOVB	runtime·iscgo(SB), R0
+	CMP 	$0, R0
+	BL.NE	runtime·load_g(SB)
+
+	CMP 	$0, g
+	BNE 	cont
+	MOVM.DB.W [R2], (R13)
+	MOVW  	$runtime·badsignal(SB), R11
+	BL	(R11)
+	ADD		$4, R13
+	RET
+
+cont:
+	// Restore R0
+	MOVM.IA.W (R13), [R0]
+
 	// NOTE: some Darwin/ARM kernels always use the main stack to run the
 	// signal handler. We need to switch to gsignal ourselves.
 	MOVW	g_m(g), R11

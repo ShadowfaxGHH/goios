@@ -27,7 +27,7 @@ inittls(void **tlsg, void **tlsbase)
 		fprintf(stderr, "runtime/cgo: pthread_key_create failed: %d\n", err);
 		abort();
 	}
-	fprintf(stderr, "k = %d\n", (int)k); // debug
+	fprintf(stderr, "runtime/cgo: k = %d, tlsbase = %p\n", (int)k, tlsbase); // debug
 	pthread_setspecific(k, (void*)magic1);
 	for (i=0; i<PTHREAD_KEYS_MAX; i++) {
 		if (*(tlsbase+i) == (void*)magic1) {
@@ -95,5 +95,6 @@ x_cgo_init(G *g, void (*setg)(void*), void **tlsg, void **tlsbase)
 	g->stacklo = (uintptr)&attr - size + 4096;
 	pthread_attr_destroy(&attr);
 
-	inittls(tlsg, tlsbase);
+	// yes, tlsbase from mrc might not be correctly aligned.
+	inittls(tlsg, (void**)((uintptr)tlsbase & ~3));
 }

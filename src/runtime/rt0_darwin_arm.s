@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 #include "textflag.h"
-#define TEST_EXT_LINK
+//#define TEST_EXT_LINK
 
 TEXT _rt0_arm_darwin(SB),7,$-4
 #ifdef TEST_EXT_LINK
@@ -14,7 +14,6 @@ TEXT _rt0_arm_darwin(SB),7,$-4
 	// prepare arguments for main (_rt0_go)
 	MOVW	(R13), R0	// argc
 	MOVW	$4(R13), R1		// argv
-	MOVM.DB.W [R0-R1], (R13)
 	MOVW	$main(SB), R4
 	B		(R4)
 
@@ -26,7 +25,7 @@ TEXT main(SB),NOSPLIT,$-8
 	// prepare arguments for main (_rt0_go)
 	MOVW	(R13), R0	// argc
 	MOVW	$4(R13), R1		// argv
-	MOVM.DB.W [R0-R1], (R13)
 #endif
+	MOVM.DB.W [R0-R1], (R13)
 	MOVW	$runtime·rt0_go(SB), R4
 	B		(R4)

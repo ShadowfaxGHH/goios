@@ -27,7 +27,7 @@ inittls(void **tlsg, void **tlsbase)
 		fprintf(stderr, "runtime/cgo: pthread_key_create failed: %d\n", err);
 		abort();
 	}
-	fprintf(stderr, "runtime/cgo: k = %d, tlsbase = %p\n", (int)k, tlsbase); // debug
+	//fprintf(stderr, "runtime/cgo: k = %d, tlsbase = %p\n", (int)k, tlsbase); // debug
 	pthread_setspecific(k, (void*)magic1);
 	for (i=0; i<PTHREAD_KEYS_MAX; i++) {
 		if (*(tlsbase+i) == (void*)magic1) {

@@ -7,8 +7,13 @@ in misc/ios to match your setup. And then run:
 	GOARM=7 CGO_ENABLED=1 GOARCH=arm CC_FOR_TARGET=`pwd`/../misc/ios/clangwrap.sh \
 	CXX_FOR_TARGET=`pwd`/../misc/ios/clangwrap.sh ./make.bash
 
+To build a program, use the normal go build command:
+
+	CGO_ENABLED=1 GOARCH=arm go build import/path
+
 
 Known issues
 ============
  - crypto/x509 won't build, I don't yet know how to get system root on iOS.
+ - Because I still want to be able to do native build, CGO_ENABLED=1 is not the default, yet.
  - cmd/5l will try to use ldid to fake code sign the compiled binary, normally your OS X machine won't have such tool, you can safely ignore the "exec ldid: No such file or directory" error message. I will remove the automatic "ldis -S" support when upstreaming the code. Its only purpose is for native development on (jailbroken) iOS.

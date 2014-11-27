@@ -1,0 +1,14 @@
+iOS
+=======
+
+To build a cross compiling toolchain for iOS on OS X, first modify clangwrap.sh
+in misc/ios to match your setup. And then run:
+
+	GOARM=7 CGO_ENABLED=1 GOARCH=arm CC_FOR_TARGET=`pwd`/../misc/ios/clangwrap.sh \
+	CXX_FOR_TARGET=`pwd`/../misc/ios/clangwrap.sh ./make.bash
+
+
+Known issues
+============
+ - crypto/x509 won't build, I don't yet know how to get system root on iOS.
+ - cmd/5l will try to use ldid to fake code sign the compiled binary, normally your OS X machine won't have such tool, you can safely ignore the "exec ldid: No such file or directory" error message. I will remove the automatic "ldis -S" support when upstreaming the code. Its only purpose is for native development on (jailbroken) iOS.

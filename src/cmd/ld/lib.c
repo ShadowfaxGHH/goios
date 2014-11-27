@@ -618,16 +618,7 @@ hostlink(void)
 		argv[argc++] = "-s";
 	}
 	if(HEADTYPE == Hdarwin)
-		if(thechar != '5')
-			argv[argc++] = "-Wl,-no_pie,-pagezero_size,4000000";
-		else {
-			argv[argc++] = "-Wl,-pagezero_size,4000000";
-			// for testing external linking only (define TEST_EXT_LINK in runtime/rt0_darwin_arm.s)
-			if (getenv("TEST_EXT_LINK") != nil) {
-				argv[argc++] = "-Wl,-e,_main,-ios_version_min,3.0"; // don't use compressed __LINKEDIT
-				argv[argc++] = "-nostdlib";
-			}
-		}
+		argv[argc++] = "-Wl,-no_pie,-pagezero_size,4000000";
 	if(HEADTYPE == Hopenbsd)
 		argv[argc++] = "-Wl,-nopie";
 	

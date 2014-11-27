@@ -203,11 +203,18 @@ TEXT runtime·sigtramp(SB),NOSPLIT,$0
 
 	CMP 	$0, g
 	BNE 	cont
-	MOVM.DB.W [R2], (R13)
+	// fake function call stack frame for badsignal
+	// we only need to pass R2 (signal number), but
+	// badsignal will expect R2 at 4(R13), so we also
+	// push R1 onto stack. turns out we do need R1
+	// to do sigreturn.
+	MOVM.DB.W [R1,R2], (R13)
 	MOVW  	$runtime·badsignal(SB), R11
 	BL	(R11)
-	ADD		$4, R13
-	RET
+	MOVM.IA.W [R1], (R13) // saved infostype
+	ADD		$(4+4), R13 // +4: also need to remove the pushed R0.
+	MOVW    -4(FP), R0 // load ucontext
+	B	ret
 
 cont:
 	// Restore R0
@@ -238,9 +245,10 @@ cont:
 	BL	(R0)
 
 	// call sigreturn
-	MOVW	$SYS_sigreturn, R12 // sigreturn(ucontext, infostyle)
 	MOVW	20(R13), R0	// saved ucontext
 	MOVW	24(R13), R1	// saved infostyle
+ret:
+	MOVW	$SYS_sigreturn, R12 // sigreturn(ucontext, infostyle)
 	SWI	$0x80
 
 	// if sigreturn fails, we can do nothing but exit

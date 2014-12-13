@@ -1,7 +1,4 @@
-syntax:glob
 .DS_Store
-.git
-.gitignore
 *.[5689ao]
 *.a[5689o]
 *.so
@@ -40,7 +37,8 @@ src/cmd/gc/y.output
 src/cmd/go/zdefaultcc.go
 src/go/doc/headscan
 src/runtime/mkversion
-src/runtime/z*
+src/runtime/zaexperiment.h
+src/runtime/zversion.go
 src/unicode/maketables
 src/*.*/
 test/pass.out
@@ -51,8 +49,5 @@ goinstall.log
 last-change
 VERSION.cache
 
-syntax:regexp
-^bin/
-^pkg/
-^src/cmd/(.*)/6?\1$
-^.*/core.[0-9]*$
+bin/
+pkg/

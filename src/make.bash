@@ -123,7 +123,7 @@ amd64) mflag=-m64;;
 esac
 case "$(uname)-$(uname -m)" in
 Darwin-i386 | Darwin-x86_64)
-	# golang.org/issue/5261, but only do not set for Darwin/arm.
+	# golang.org/issue/5261, but only set for OS X.
 	mflag="$mflag -mmacosx-version-min=10.6"
 	;;
 esac

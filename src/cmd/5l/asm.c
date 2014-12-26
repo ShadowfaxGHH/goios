@@ -303,7 +303,7 @@ machoreloc1(Reloc *r, vlong sectoff)
 {
 	uint32 v;
 	LSym *rs;
-	
+
 	rs = r->xsym;
 
 	if(rs->type == SHOSTOBJ || r->type == R_CALLARM) {
@@ -311,7 +311,7 @@ machoreloc1(Reloc *r, vlong sectoff)
 			diag("reloc %d to non-macho symbol %s type=%d", r->type, rs->name, rs->type);
 			return -1;
 		}
-		v = rs->dynid;			
+		v = rs->dynid;
 		v |= 1<<27; // external relocation
 	} else {
 		v = rs->sect->extnum;
@@ -332,7 +332,7 @@ machoreloc1(Reloc *r, vlong sectoff)
 		v |= MACHO_ARM_RELOC_BR24<<28;
 		break;
 	}
-	
+
 	switch(r->siz) {
 	default:
 		return -1;

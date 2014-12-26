@@ -175,7 +175,7 @@ linknew(LinkArch *arch)
 			ctxt->tlsoffset = 0x468;
 			break;
 		case '5':
-			ctxt->tlsoffset = 0x888; // TODO(minux)
+			ctxt->tlsoffset = 0; // dummy value, not needed
 			break;
 		}
 		break;

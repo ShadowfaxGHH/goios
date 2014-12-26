@@ -3,8 +3,8 @@
 // license that can be found in the LICENSE file.
 
 // System calls and other sys.stuff for ARM, Darwin
-// See https://raw.github.com/darwin-on-arm/xnu/master/bsd/kern/syscalls.master
-// for system call numbers.
+// See http://fxr.watson.org/fxr/source/bsd/kern/syscalls.c?v=xnu-1228
+// or /usr/include/sys/syscall.h (on a Mac) for system call numbers.
 
 #include "go_asm.h"
 #include "go_tls.h"
@@ -26,16 +26,16 @@
 #define	SYS___pthread_kill 328
 #define	SYS_setitimer      83
 #define	SYS___sysctl       202
-#define SYS_sigprocmask    48
+#define	SYS_sigprocmask    48
 #define	SYS_sigaction      46
 #define	SYS_sigreturn      184
 #define	SYS_select         93
 #define	SYS_bsdthread_register 366
 #define	SYS_bsdthread_create 360
 #define	SYS_bsdthread_terminate 361
-#define SYS_kqueue         362
-#define SYS_kevent         363
-#define SYS_fcntl          92
+#define	SYS_kqueue         362
+#define	SYS_kevent         363
+#define	SYS_fcntl          92
 
 TEXT notok<>(SB),NOSPLIT,$0
 	MOVW	$0, R8
@@ -154,16 +154,16 @@ TEXT time·now(SB), 7, $32
 	MOVW	$0, R1  // zone
 	MOVW	$SYS_gettimeofday, R12
 	SWI	$0x80 // Note: R0 is tv_sec, R1 is tv_usec
-	
+
 	MOVW    R1, R2  // usec
-	
+
 	MOVW	R0, 0(FP)
 	MOVW	$0, R1
 	MOVW	R1, 4(FP)
 	MOVW	$1000, R3
 	MUL	R3, R2
 	MOVW	R2, 8(FP)
-	RET	
+	RET
 
 TEXT runtime·nanotime(SB),NOSPLIT,$32
 	MOVW	$8(R13), R0  // timeval
@@ -179,7 +179,7 @@ TEXT runtime·nanotime(SB),NOSPLIT,$32
 	MUL	R3, R2
 	ADD.S	R2, R0
 	ADC	R4, R1
-	
+
 	MOVW	R0, 0(FP)
 	MOVW	R1, 4(FP)
 	RET

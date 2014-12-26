@@ -497,13 +497,13 @@ static char *proto_gccargs2[] = {
 	// on older versions of GCC, -Wuninitialized is not supported
 	// without -O, so put it here together with -O settings in case
 	// the user's $CFLAGS doesn't include -O.
-	//"-Wuninitialized",
+	"-Wuninitialized",
 #if defined(__NetBSD__) && defined(__arm__)
 	// GCC 4.5.4 (NetBSD nb1 20120916) on ARM is known to mis-optimize gc/mparith3.c
 	// Fix available at http://patchwork.ozlabs.org/patch/64562/.
-	"-O0",
+	"-O1",
 #else
-	"-O0",
+	"-O2",
 #endif
 };
 

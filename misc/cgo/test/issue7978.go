@@ -94,6 +94,9 @@ func issue7978go() {
 }
 
 func test7978(t *testing.T) {
+	if runtime.Compiler == "gccgo" {
+		t.Skip("gccgo can not do stack traces of C code")
+	}
 	if C.HAS_SYNC_FETCH_AND_ADD == 0 {
 		t.Skip("newer gcc or clang required for __sync_fetch_and_add support")
 	}

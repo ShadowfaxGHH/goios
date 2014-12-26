@@ -143,18 +143,6 @@ mapbucket(Type *t)
 	// We don't need to encode it as GC doesn't care about it.
 	offset = BUCKETSIZE * 1;
 
-	overflowfield = typ(TFIELD);
-	overflowfield->type = ptrto(bucket);
-	overflowfield->width = offset;         // "width" is offset in structure
-	overflowfield->sym = mal(sizeof(Sym)); // not important but needs to be set to give this type a name
-	overflowfield->sym->name = "overflow";
-	offset += widthptr;
-	
-	// The keys are padded to the native integer alignment.
-	// This is usually the same as widthptr; the exception (as usual) is nacl/amd64.
-	if(widthreg > widthptr)
-		offset += widthreg - widthptr;
-
 	keysfield = typ(TFIELD);
 	keysfield->type = typ(TARRAY);
 	keysfield->type->type = keytype;
@@ -175,11 +163,23 @@ mapbucket(Type *t)
 	valuesfield->sym->name = "values";
 	offset += BUCKETSIZE * valtype->width;
 
+	overflowfield = typ(TFIELD);
+	overflowfield->type = ptrto(bucket);
+	overflowfield->width = offset;         // "width" is offset in structure
+	overflowfield->sym = mal(sizeof(Sym)); // not important but needs to be set to give this type a name
+	overflowfield->sym->name = "overflow";
+	offset += widthptr;
+	
+	// Pad to the native integer alignment.
+	// This is usually the same as widthptr; the exception (as usual) is nacl/amd64.
+	if(widthreg > widthptr)
+		offset += widthreg - widthptr;
+
 	// link up fields
-	bucket->type = overflowfield;
-	overflowfield->down = keysfield;
+	bucket->type = keysfield;
 	keysfield->down = valuesfield;
-	valuesfield->down = T;
+	valuesfield->down = overflowfield;
+	overflowfield->down = T;
 
 	bucket->width = offset;
 	bucket->local = t->local;
@@ -954,6 +954,55 @@ weaktypesym(Type *t)
 	return s;
 }
 
+/*
+ * Returns 1 if t has a reflexive equality operator.
+ * That is, if x==x for all x of type t.
+ */
+static int
+isreflexive(Type *t)
+{
+	Type *t1;
+	switch(t->etype) {
+		case TBOOL:
+		case TINT:
+		case TUINT:
+		case TINT8:
+		case TUINT8:
+		case TINT16:
+		case TUINT16:
+		case TINT32:
+		case TUINT32:
+		case TINT64:
+		case TUINT64:
+		case TUINTPTR:
+		case TPTR32:
+		case TPTR64:
+		case TUNSAFEPTR:
+		case TSTRING:
+		case TCHAN:
+			return 1;
+		case TFLOAT32:
+		case TFLOAT64:
+		case TCOMPLEX64:
+		case TCOMPLEX128:
+		case TINTER:
+			return 0;
+		case TARRAY:
+			if(isslice(t))
+				fatal("slice can't be a map key: %T", t);
+			return isreflexive(t->type);
+		case TSTRUCT:
+			for(t1=t->type; t1!=T; t1=t1->down) {
+				if(!isreflexive(t1->type))
+					return 0;
+			}
+			return 1;
+		default:
+			fatal("bad type for map key: %T", t);
+			return 0;
+	}
+}
+
 static Sym*
 dtypesym(Type *t)
 {
@@ -1123,6 +1172,7 @@ ok:
 			ot = duint8(s, ot, 0); // not indirect
 		}
 		ot = duint16(s, ot, mapbucket(t)->width);
+                ot = duint8(s, ot, isreflexive(t->down));
 		break;
 
 	case TPTR32:

@@ -40,7 +40,7 @@ import "unsafe"
 //
 //	3. If the MCentral free list is empty, replenish it by
 //	   allocating a run of pages from the MHeap and then
-//	   chopping that memory into a objects of the given size.
+//	   chopping that memory into objects of the given size.
 //	   Allocating many objects amortizes the cost of locking
 //	   the heap.
 //
@@ -477,7 +477,7 @@ type finblock struct {
 	next    *finblock
 	cnt     int32
 	_       int32
-	fin     [(_FinBlockSize-2*ptrSize-2*4)/unsafe.Sizeof(finalizer{})]finalizer
+	fin     [(_FinBlockSize - 2*ptrSize - 2*4) / unsafe.Sizeof(finalizer{})]finalizer
 }
 
 // Information from the compiler about the layout of stack frames.

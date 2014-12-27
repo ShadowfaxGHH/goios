@@ -21,7 +21,6 @@ TEXT	·Syscall(SB),NOSPLIT,$0-32
 	MOVW	R1, 20(SP)	// r1
 	MOVW	$0, R2
 	MOVW	R2, 24(SP)	// r2
-	//RSB		$0, R0, R0
 	MOVW	R0, 28(SP)	// errno
 	BL		runtime·exitsyscall(SB)
 	RET
@@ -45,7 +44,6 @@ TEXT ·RawSyscall(SB),NOSPLIT,$0-32
 	MOVW	R1, 20(SP)	// r1
 	MOVW	$0, R2
 	MOVW	R2, 24(SP)	// r2
-	//RSB		$0, R0, R0
 	MOVW	R0, 28(SP)	// errno
 	RET
 ok1:
@@ -71,7 +69,6 @@ TEXT	·Syscall6(SB),NOSPLIT,$0-44
 	MOVW	R1, 32(SP)	// r1
 	MOVW	$0, R2
 	MOVW	R2, 36(SP)	// r2
-	//RSB		$0, R0, R0
 	MOVW	R0, 40(SP)	// errno
 	BL		runtime·exitsyscall(SB)
 	RET
@@ -98,7 +95,6 @@ TEXT	·RawSyscall6(SB),NOSPLIT,$0-44
 	MOVW	R1, 32(SP)	// r1
 	MOVW	$0, R2
 	MOVW	R2, 36(SP)	// r2
-	//RSB		$0, R0, R0
 	MOVW	R0, 40(SP)	// errno
 	RET
 ok2:
@@ -125,7 +121,6 @@ TEXT	·Syscall9(SB),NOSPLIT,$0-56
 	MOVW	R1, 44(SP)	// r1
 	MOVW	$0, R2
 	MOVW	R2, 48(SP)	// r2
-	//RSB		$0, R0, R0
 	MOVW	R0, 52(SP)	// errno
 	BL		runtime·exitsyscall(SB)
 	RET

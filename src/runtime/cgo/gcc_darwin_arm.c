@@ -10,7 +10,7 @@
 #define magic1 (0xe696c4f4U)
 
 // The first key should be at 258.
-#define PTHREAD_KEYS_MAX 512
+#define KEYS_MAX 512
 
 // inittls allocates a thread-local storage slot for g.
 //
@@ -29,7 +29,7 @@ inittls(void **tlsg, void **tlsbase)
 	}
 	//fprintf(stderr, "runtime/cgo: k = %d, tlsbase = %p\n", (int)k, tlsbase); // debug
 	pthread_setspecific(k, (void*)magic1);
-	for (i=0; i<PTHREAD_KEYS_MAX; i++) {
+	for (i=0; i<KEYS_MAX; i++) {
 		if (*(tlsbase+i) == (void*)magic1) {
 			*tlsg = (void*)(i*sizeof(void *));
 			pthread_setspecific(k, 0);

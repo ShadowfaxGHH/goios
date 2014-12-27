@@ -13,7 +13,10 @@ package cgotest
 void issue7978cb(void);
 
 #if defined(__APPLE__) && defined(__arm__)
-#if __GNUC_MINOR__ > 2 || defined(__clang__)
+// on Darwin/ARM, libSystem doesn't provide implementation of the __sync_fetch_and_add
+// primitive, and although gcc supports it, it doesn't inline its definition.
+// Clang could inline its definition, so we require clang on Darwin/ARM.
+#if defined(__clang__)
 #define HAS_SYNC_FETCH_AND_ADD 1
 #else
 #define HAS_SYNC_FETCH_AND_ADD 0
@@ -98,7 +101,7 @@ func test7978(t *testing.T) {
 		t.Skip("gccgo can not do stack traces of C code")
 	}
 	if C.HAS_SYNC_FETCH_AND_ADD == 0 {
-		t.Skip("newer gcc or clang required for __sync_fetch_and_add support")
+		t.Skip("clang required for __sync_fetch_and_add support on darwin/arm")
 	}
 	if os.Getenv("GOTRACEBACK") != "2" {
 		t.Fatalf("GOTRACEBACK must be 2")

@@ -57,7 +57,7 @@ double ldexp(double frac, int exp) {
 	uint64_t x = float64bits(frac);
 	exp += (int)((x>>shift)&mask) - bias;
 	if (exp < -1074) { // underflow
-		if (frac < 0.0) return float64frombits(1ULL<<63);
+		if (frac < 0.0) return float64frombits(1ULL<<63); // -0.0
 		return 0.0;
 	}
 	if (exp > 1023) { // overflow

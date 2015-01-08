@@ -241,8 +241,8 @@ var (
 	gccheckmarkenable = true
 )
 
-// Is address b in the known heap. If it doesn't have a valid gcmap
-// returns false. For example pointers into stacks will return false.
+// inheap reports whether b is a pointer into a (potentially dead) heap object.
+// It returns false for pointers into stack spans.
 //go:nowritebarrier
 func inheap(b uintptr) bool {
 	if b == 0 || b < mheap_.arena_start || b >= mheap_.arena_used {
@@ -408,8 +408,9 @@ func gcmarknewobject_m(obj uintptr) {
 // obj is the start of an object with mark mbits.
 // If it isn't already marked, mark it and enqueue into workbuf.
 // Return possibly new workbuf to use.
+// base and off are for debugging only and could be removed.
 //go:nowritebarrier
-func greyobject(obj uintptr, mbits *markbits, wbuf *workbuf) *workbuf {
+func greyobject(obj uintptr, base, off uintptr, mbits *markbits, wbuf *workbuf) *workbuf {
 	// obj should be start of allocation, and so must be at least pointer-aligned.
 	if obj&(ptrSize-1) != 0 {
 		throw("greyobject: obj not pointer-aligned")
@@ -418,6 +419,7 @@ func greyobject(obj uintptr, mbits *markbits, wbuf *workbuf) *workbuf {
 	if checkmark {
 		if !ismarked(mbits) {
 			print("runtime:greyobject: checkmarks finds unexpected unmarked object obj=", hex(obj), ", mbits->bits=", hex(mbits.bits), " *mbits->bitp=", hex(*mbits.bitp), "\n")
+			print("runtime: found obj at *(", hex(base), "+", hex(off), ")\n")
 
 			k := obj >> _PageShift
 			x := k
@@ -557,6 +559,10 @@ func scanobject(b, n uintptr, ptrmask *uint8, wbuf *workbuf) *workbuf {
 			continue
 		}
 
+		if mheap_.shadow_enabled && debug.wbshadow >= 2 && gccheckmarkenable && checkmark {
+			checkwbshadow((*uintptr)(unsafe.Pointer(b + i)))
+		}
+
 		// Mark the object. return some important bits.
 		// We we combine the following two rotines we don't have to pass mbits or obj around.
 		var mbits markbits
@@ -564,7 +570,7 @@ func scanobject(b, n uintptr, ptrmask *uint8, wbuf *workbuf) *workbuf {
 		if obj == 0 {
 			continue
 		}
-		wbuf = greyobject(obj, &mbits, wbuf)
+		wbuf = greyobject(obj, b, i, &mbits, wbuf)
 	}
 	return wbuf
 }
@@ -575,7 +581,12 @@ func scanobject(b, n uintptr, ptrmask *uint8, wbuf *workbuf) *workbuf {
 // As a special case, scanblock(nil, 0, nil) means to scan previously queued work,
 // stopping only when no work is left in the system.
 //go:nowritebarrier
-func scanblock(b, n uintptr, ptrmask *uint8) {
+func scanblock(b0, n0 uintptr, ptrmask *uint8) {
+	// Use local copies of original parameters, so that a stack trace
+	// due to one of the throws below shows the original block
+	// base and extent.
+	b := b0
+	n := n0
 	wbuf := getpartialorempty()
 	if b != 0 {
 		wbuf = scanobject(b, n, ptrmask, wbuf)
@@ -594,6 +605,11 @@ func scanblock(b, n uintptr, ptrmask *uint8) {
 	}
 
 	keepworking := b == 0
+
+	if gcphase != _GCmark && gcphase != _GCmarktermination {
+		println("gcphase", gcphase)
+		throw("scanblock phase")
+	}
 
 	// ptrmask can have 2 possible values:
 	// 1. nil - obtain pointer mask from GC bitmap.
@@ -885,7 +901,7 @@ func scanframe(frame *stkframe, unused unsafe.Pointer) bool {
 		return true
 	}
 	if _DebugGC > 1 {
-		print("scanframe ", gofuncname(f), "\n")
+		print("scanframe ", funcname(f), "\n")
 	}
 	if targetpc != f.entry {
 		targetpc--
@@ -909,14 +925,14 @@ func scanframe(frame *stkframe, unused unsafe.Pointer) bool {
 	if size > minsize {
 		stkmap := (*stackmap)(funcdata(f, _FUNCDATA_LocalsPointerMaps))
 		if stkmap == nil || stkmap.n <= 0 {
-			print("runtime: frame ", gofuncname(f), " untyped locals ", hex(frame.varp-size), "+", hex(size), "\n")
+			print("runtime: frame ", funcname(f), " untyped locals ", hex(frame.varp-size), "+", hex(size), "\n")
 			throw("missing stackmap")
 		}
 
 		// Locals bitmap information, scan just the pointers in locals.
 		if pcdata < 0 || pcdata >= stkmap.n {
 			// don't know where we are
-			print("runtime: pcdata is ", pcdata, " and ", stkmap.n, " locals stack map entries for ", gofuncname(f), " (targetpc=", targetpc, ")\n")
+			print("runtime: pcdata is ", pcdata, " and ", stkmap.n, " locals stack map entries for ", funcname(f), " (targetpc=", targetpc, ")\n")
 			throw("scanframe: bad symbol table")
 		}
 		bv := stackmapdata(stkmap, pcdata)
@@ -932,12 +948,12 @@ func scanframe(frame *stkframe, unused unsafe.Pointer) bool {
 		} else {
 			stkmap := (*stackmap)(funcdata(f, _FUNCDATA_ArgsPointerMaps))
 			if stkmap == nil || stkmap.n <= 0 {
-				print("runtime: frame ", gofuncname(f), " untyped args ", hex(frame.argp), "+", hex(frame.arglen), "\n")
+				print("runtime: frame ", funcname(f), " untyped args ", hex(frame.argp), "+", hex(frame.arglen), "\n")
 				throw("missing stackmap")
 			}
 			if pcdata < 0 || pcdata >= stkmap.n {
 				// don't know where we are
-				print("runtime: pcdata is ", pcdata, " and ", stkmap.n, " args stack map entries for ", gofuncname(f), " (targetpc=", targetpc, ")\n")
+				print("runtime: pcdata is ", pcdata, " and ", stkmap.n, " args stack map entries for ", funcname(f), " (targetpc=", targetpc, ")\n")
 				throw("scanframe: bad symbol table")
 			}
 			bv = stackmapdata(stkmap, pcdata)
@@ -1019,7 +1035,7 @@ func shade(b uintptr) {
 	var mbits markbits
 	obj := objectstart(b, &mbits)
 	if obj != 0 {
-		wbuf = greyobject(obj, &mbits, wbuf) // augments the wbuf
+		wbuf = greyobject(obj, 0, 0, &mbits, wbuf) // augments the wbuf
 	}
 	putpartial(wbuf)
 }
@@ -1773,9 +1789,7 @@ func gccheckmark_m(startTime int64, eagersweep bool) {
 
 	checkmark = true
 	clearcheckmarkbits()        // Converts BitsDead to BitsScalar.
-	gc_m(startTime, eagersweep) // turns off checkmark
-	// Work done, fixed up the GC bitmap to remove the checkmark bits.
-	clearcheckmarkbits()
+	gc_m(startTime, eagersweep) // turns off checkmark + calls clearcheckmarkbits
 }
 
 //go:nowritebarrier
@@ -1824,7 +1838,6 @@ func gcscan_m() {
 	// by placing it onto a scanenqueue state and then calling
 	// runtime·restartg(mastergp) to make it Grunnable.
 	// At the bottom we will want to return this p back to the scheduler.
-	oldphase := gcphase
 
 	// Prepare flag indicating that the scan has not been completed.
 	lock(&allglock)
@@ -1838,7 +1851,6 @@ func gcscan_m() {
 	work.nwait = 0
 	work.ndone = 0
 	work.nproc = 1 // For now do not do this in parallel.
-	gcphase = _GCscan
 	//	ackgcphase is not needed since we are not scanning running goroutines.
 	parforsetup(work.markfor, work.nproc, uint32(_RootCount+local_allglen), nil, false, markroot)
 	parfordo(work.markfor)
@@ -1853,7 +1865,6 @@ func gcscan_m() {
 	}
 	unlock(&allglock)
 
-	gcphase = oldphase
 	casgstatus(mastergp, _Gwaiting, _Grunning)
 	// Let the g that called us continue to run.
 }
@@ -2026,6 +2037,7 @@ func gc(start_time int64, eagersweep bool) {
 			return
 		}
 		checkmark = false // done checking marks
+		clearcheckmarkbits()
 	}
 
 	// Cache the current array for sweeping.

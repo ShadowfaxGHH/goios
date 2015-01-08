@@ -308,6 +308,10 @@ marked:
 		})
 	}
 
+	if mheap_.shadow_enabled {
+		clearshadow(uintptr(x), size)
+	}
+
 	if raceenabled {
 		racemalloc(x, size)
 	}
@@ -415,20 +419,6 @@ func rawmem(size uintptr) unsafe.Pointer {
 	return mallocgc(size, nil, flagNoScan|flagNoZero)
 }
 
-// round size up to next size class
-func goroundupsize(size uintptr) uintptr {
-	if size < maxSmallSize {
-		if size <= 1024-8 {
-			return uintptr(class_to_size[size_to_class8[(size+7)>>3]])
-		}
-		return uintptr(class_to_size[size_to_class128[(size-1024+127)>>7]])
-	}
-	if size+pageSize < size {
-		return size
-	}
-	return (size + pageSize - 1) &^ pageMask
-}
-
 func profilealloc(mp *m, x unsafe.Pointer, size uintptr) {
 	c := mp.mcache
 	rate := MemProfileRate
@@ -503,6 +493,7 @@ func gogc(force int32) {
 	systemstack(stoptheworld)
 	systemstack(finishsweep_m) // finish sweep before we start concurrent scan.
 	if force == 0 {            // Do as much work concurrently as possible
+		gcphase = _GCscan
 		systemstack(starttheworld)
 		gctimer.cycle.scan = nanotime()
 		// Do a concurrent heap scan before we stop the world.
@@ -817,7 +808,7 @@ func SetFinalizer(obj interface{}, finalizer interface{}) {
 			// ok - satisfies empty interface
 			goto okarg
 		}
-		if _, ok := assertE2I2(ityp, obj); ok {
+		if assertE2I2(ityp, obj, nil) {
 			goto okarg
 		}
 	}
@@ -947,12 +938,12 @@ func runfinq() {
 					if len(ityp.mhdr) != 0 {
 						// convert to interface with methods
 						// this conversion is guaranteed to succeed - we checked in SetFinalizer
-						*(*fInterface)(frame) = assertE2I(ityp, *(*interface{})(frame))
+						assertE2I(ityp, *(*interface{})(frame), (*fInterface)(frame))
 					}
 				default:
 					throw("bad kind in runfinq")
 				}
-				reflectcall(unsafe.Pointer(f.fn), frame, uint32(framesz), uint32(framesz))
+				reflectcall(nil, unsafe.Pointer(f.fn), frame, uint32(framesz), uint32(framesz))
 
 				// drop finalizer queue references to finalized object
 				f.fn = nil

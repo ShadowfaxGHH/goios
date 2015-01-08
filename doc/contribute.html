@@ -154,7 +154,7 @@ Git, note that you still need the commit hooks that the git-codereview command
 configures; those hooks add a Gerrit <code>Change-Id</code> line to the commit
 message and check that all Go source files have been formatted with gofmt. Even
 if you intend to use plain Git for daily work, install the hooks in a new Git
-checkout by running <code>git-codereview</code> <code>hooks</code>).
+checkout by running <code>git-codereview</code> <code>hooks</code>.
 </p>
 
 <h3>Set up git aliases</h3>
@@ -461,7 +461,7 @@ $ git sync
 </pre>
 
 <p>
-(In git terms, git sync runs
+(In git terms, <code>git</code> <code>sync</code> runs
 <code>git</code> <code>pull</code> <code>-r</code>.)
 </p>
 
@@ -652,7 +652,7 @@ This rigmarole needs to be done only for your first submission.
 <p>Code that you contribute should use the standard copyright header:</p>
 
 <pre>
-// Copyright 2014 The Go Authors. All rights reserved.
+// Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 </pre>

@@ -77,6 +77,9 @@ func goargs() {
 }
 
 func goenvs_unix() {
+	// TODO(austin): ppc64 in dynamic linking mode doesn't
+	// guarantee env[] will immediately follow argv.  Might cause
+	// problems.
 	n := int32(0)
 	for argv_index(argv, argc+1+n) != nil {
 		n++
@@ -301,18 +304,31 @@ type dbgVar struct {
 	value *int32
 }
 
-// Do we report invalid pointers found during stack or heap scans?
-//var invalidptr int32 = 1
+// TODO(rsc): Make GC respect debug.invalidptr.
+
+// Holds variables parsed from GODEBUG env var.
+var debug struct {
+	allocfreetrace int32
+	efence         int32
+	gcdead         int32
+	gctrace        int32
+	invalidptr     int32
+	scavenge       int32
+	scheddetail    int32
+	schedtrace     int32
+	wbshadow       int32
+}
 
 var dbgvars = []dbgVar{
 	{"allocfreetrace", &debug.allocfreetrace},
-	{"invalidptr", &invalidptr},
 	{"efence", &debug.efence},
-	{"gctrace", &debug.gctrace},
 	{"gcdead", &debug.gcdead},
+	{"gctrace", &debug.gctrace},
+	{"invalidptr", &debug.invalidptr},
+	{"scavenge", &debug.scavenge},
 	{"scheddetail", &debug.scheddetail},
 	{"schedtrace", &debug.schedtrace},
-	{"scavenge", &debug.scavenge},
+	{"wbshadow", &debug.wbshadow},
 }
 
 func parsedebugvars() {
@@ -331,7 +347,7 @@ func parsedebugvars() {
 		key, value := field[:i], field[i+1:]
 		for _, v := range dbgvars {
 			if v.name == key {
-				*v.value = int32(goatoi(value))
+				*v.value = int32(atoi(value))
 			}
 		}
 	}
@@ -342,7 +358,7 @@ func parsedebugvars() {
 	case "crash":
 		traceback_cache = 2<<1 | 1
 	default:
-		traceback_cache = uint32(goatoi(p)) << 1
+		traceback_cache = uint32(atoi(p)) << 1
 	}
 }
 
@@ -417,5 +433,5 @@ func readgogc() int32 {
 	if p == "off" {
 		return -1
 	}
-	return int32(goatoi(p))
+	return int32(atoi(p))
 }

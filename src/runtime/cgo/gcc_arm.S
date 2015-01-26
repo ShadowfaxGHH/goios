@@ -11,7 +11,7 @@
 #define EXT(s) s
 #endif
 
-// Apple's ld64 want 4-byte alignment for ARM code sections.
+// Apple's ld64 wants 4-byte alignment for ARM code sections.
 // .align in both Apple as and GNU as treat the number as powers of 2.
 .align	2
 

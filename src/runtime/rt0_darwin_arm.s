@@ -12,9 +12,6 @@ TEXT _rt0_arm_darwin(SB),7,$-4
 	B		(R4)
 
 TEXT main(SB),NOSPLIT,$-8
-	// disable runfast mode of vfp
-	EOR		R12, R12
-	WORD	$0xeee1ca10 // fmxr	fpscr, ip
 	// save argc and argv onto stack
 	MOVM.DB.W [R0-R1], (R13)
 	MOVW	$runtime·rt0_go(SB), R4

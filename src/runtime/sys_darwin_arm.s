@@ -348,8 +348,6 @@ create_ret:
 //	R5 = flags (= 0)
 // XXX: how to deal with R4/SP? ref: Libc-594.9.1/arm/pthreads/thread_start.s
 TEXT runtime·bsdthread_start(SB),NOSPLIT,$0
-	///MOVW    R4, SP // empirically, SP is very wrong but R4 is right
-	//MOVW    R3, m
 	MOVW    R1, m_procid(R3) // thread port is m->procid
 	MOVW	m_g0(R3), g
 	MOVW	R3, g_m(g)

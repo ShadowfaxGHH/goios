@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+# See golang.org/s/go15bootstrap for an overview of the build process.
+
 # Environment variables that control make.bash:
 #
 # GOROOT_FINAL: The expected final Go root, baked into binaries.
@@ -110,28 +112,16 @@ rm -f ./runtime/runtime_defs.go
 
 # Finally!  Run the build.
 
-echo '##### Building C bootstrap tool.'
+echo '##### Building Go bootstrap tool.'
 echo cmd/dist
 export GOROOT="$(cd .. && pwd)"
-GOROOT_FINAL="${GOROOT_FINAL:-$GOROOT}"
-DEFGOROOT='-DGOROOT_FINAL="'"$GOROOT_FINAL"'"'
-
-mflag=""
-case "$GOHOSTARCH" in
-386) mflag=-m32;;
-amd64) mflag=-m64;;
-esac
-case "$(uname)-$(uname -m)" in
-Darwin-i386 | Darwin-x86_64)
-	# golang.org/issue/5261, but only set for OS X.
-	mflag="$mflag -mmacosx-version-min=10.6"
-	;;
-esac
-# if gcc does not exist and $CC is not set, try clang if available.
-if [ -z "$CC" -a -z "$(type -t gcc)" -a -n "$(type -t clang)" ]; then
-	export CC=clang CXX=clang++
+GOROOT_BOOTSTRAP=${GOROOT_BOOTSTRAP:-$HOME/go1.4}
+if [ ! -x "$GOROOT_BOOTSTRAP/bin/go" ]; then
+	echo "ERROR: Cannot find $GOROOT_BOOTSTRAP/bin/go." >&2
+	echo "Set \$GOROOT_BOOTSTRAP to a working Go tree >= Go 1.4." >&2
 fi
-${CC:-gcc} $mflag -O2 -Wall -Werror -o cmd/dist/dist -Icmd/dist "$DEFGOROOT" cmd/dist/*.c
+rm -f cmd/dist/dist
+GOROOT="$GOROOT_BOOTSTRAP" GOOS="" GOARCH="" "$GOROOT_BOOTSTRAP/bin/go" build -o cmd/dist/dist ./cmd/dist
 
 # -e doesn't propagate out of eval, so check success by hand.
 eval $(./cmd/dist/dist env -p || echo FAIL=true)

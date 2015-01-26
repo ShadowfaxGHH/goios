@@ -463,27 +463,35 @@ func (x *Int) Format(s fmt.State, ch rune) {
 //
 func (z *Int) scan(r io.RuneScanner, base int) (*Int, int, error) {
 	// determine sign
-	ch, _, err := r.ReadRune()
+	neg, err := scanSign(r)
 	if err != nil {
 		return nil, 0, err
 	}
-	neg := false
-	switch ch {
-	case '-':
-		neg = true
-	case '+': // nothing to do
-	default:
-		r.UnreadRune()
-	}
 
 	// determine mantissa
-	z.abs, base, err = z.abs.scan(r, base)
+	z.abs, base, _, err = z.abs.scan(r, base)
 	if err != nil {
 		return nil, base, err
 	}
 	z.neg = len(z.abs) > 0 && neg // 0 has no sign
 
 	return z, base, nil
+}
+
+func scanSign(r io.RuneScanner) (neg bool, err error) {
+	var ch rune
+	if ch, _, err = r.ReadRune(); err != nil {
+		return false, err
+	}
+	switch ch {
+	case '-':
+		neg = true
+	case '+':
+		// nothing to do
+	default:
+		r.UnreadRune()
+	}
+	return
 }
 
 // Scan is a support routine for fmt.Scanner; it sets z to the value of
@@ -736,7 +744,7 @@ func (z *Int) binaryGCD(a, b *Int) *Int {
 
 // ProbablyPrime performs n Miller-Rabin tests to check whether x is prime.
 // If it returns true, x is prime with probability 1 - 1/4^n.
-// If it returns false, x is not prime. n must be >0.
+// If it returns false, x is not prime. n must be > 0.
 func (x *Int) ProbablyPrime(n int) bool {
 	if n <= 0 {
 		panic("non-positive n for ProbablyPrime")

@@ -982,6 +982,7 @@ EXTERN	int	funcdepth;
 EXTERN	int	typecheckok;
 EXTERN	int	compiling_runtime;
 EXTERN	int	compiling_wrappers;
+EXTERN	int	inl_nonlocal;
 EXTERN	int	use_writebarrier;
 EXTERN	int	pure_go;
 EXTERN	char*	flag_installsuffix;
@@ -994,8 +995,6 @@ EXTERN	int	debuglive;
 EXTERN	Link*	ctxt;
 
 EXTERN	int	nointerface;
-EXTERN	int	fieldtrack_enabled;
-EXTERN	int	precisestack_enabled;
 EXTERN	int	writearchive;
 
 EXTERN	Biobuf	bstdout;

@@ -31,3 +31,9 @@ enum {
 };
 
 #define StackPreempt ((uint64)-1314)
+/*c2go
+enum
+{
+	StackPreempt = 1, // TODO: Change to (uint64)-1314 in Go translation
+};
+*/

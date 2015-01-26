@@ -645,7 +645,7 @@ TEXT runtime·cputicks(SB),NOSPLIT,$0-0
 // memhash_varlen(p unsafe.Pointer, h seed) uintptr
 // redirects to memhash(p, h, size) using the size
 // stored in the closure.
-TEXT runtime·memhash_varlen(SB),NOSPLIT,$20-12
+TEXT runtime·memhash_varlen(SB),NOSPLIT,$24-12
 	GO_ARGS
 	NO_LOCAL_POINTERS
 	MOVL	p+0(FP), AX
@@ -831,6 +831,9 @@ TEXT runtime·cmpstring(SB),NOSPLIT,$0-20
 	CALL	runtime·cmpbody(SB)
 	MOVL	AX, ret+16(FP)
 	RET
+
+TEXT strings·Compare(SB),NOSPLIT,$0
+        JMP	runtime·cmpstring(SB)
 
 TEXT bytes·Compare(SB),NOSPLIT,$0-28
 	MOVL	s1+0(FP), SI

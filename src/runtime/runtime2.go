@@ -203,6 +203,7 @@ type g struct {
 	paniconfault bool // panic (instead of crash) on unexpected fault address
 	preemptscan  bool // preempted g does scan for gc
 	gcworkdone   bool // debug: cleared at begining of gc work phase cycle, set by gcphasework, tested at end of cycle
+	gcscanvalid  bool // false at start of gc cycle, true if G has not run since last scan
 	throwsplit   bool // must not split stack
 	raceignore   int8 // ignore race detection events
 	m            *m   // for debuggers, but offset not hard-coded
@@ -213,6 +214,7 @@ type g struct {
 	sigcode1     uintptr
 	sigpc        uintptr
 	gopc         uintptr // pc of go statement that created this goroutine
+	startpc      uintptr // pc of goroutine function
 	racectx      uintptr
 	waiting      *sudog // sudog structures this g is waiting on (that have a valid elem ptr)
 }
@@ -276,6 +278,8 @@ type m struct {
 	traceback     uint8
 	waitunlockf   unsafe.Pointer // todo go func(*g, unsafe.pointer) bool
 	waitlock      unsafe.Pointer
+	waittraceev   byte
+	syscalltick   uint32
 	//#ifdef GOOS_windows
 	thread uintptr // thread handle
 	// these are here because they are too large to be on the stack
@@ -323,6 +327,8 @@ type p struct {
 	// Available G's (status == Gdead)
 	gfree    *g
 	gfreecnt int32
+
+	tracebuf *traceBuf
 
 	pad [64]byte
 }

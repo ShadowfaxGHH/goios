@@ -27,7 +27,6 @@ static void	typecheckas2(Node*);
 static void	typecheckas(Node*);
 static void	typecheckfunc(Node*);
 static void	checklvalue(Node*, char*);
-static void	checkassign(Node*);
 static void	checkassignlist(NodeList*);
 static void	stringtoarraylit(Node**);
 static Node*	resolve(Node*);
@@ -586,7 +585,9 @@ reswitch:
 				l->typecheck = 1;
 				n->left = l;
 				t = l->type;
-			} else if(l->type->etype != TBLANK && (aop = assignop(r->type, l->type, nil)) != 0) {
+				goto converted;
+			}
+			if(l->type->etype != TBLANK && (aop = assignop(r->type, l->type, nil)) != 0) {
 				if(isinter(l->type) && !isinter(r->type) && algtype1(r->type, nil) == ANOEQ) {
 					yyerror("invalid operation: %N (operator %O not defined on %s)", n, op, typekind(r->type));
 					goto error;
@@ -597,6 +598,7 @@ reswitch:
 				n->right = r;
 				t = r->type;
 			}
+		converted:
 			et = t->etype;
 		}
 		if(t->etype != TIDEAL && !eqtype(l->type, r->type)) {
@@ -1663,6 +1665,9 @@ reswitch:
 	case OAS:
 		ok |= Etop;
 		typecheckas(n);
+		// Code that creates temps does not bother to set defn, so do it here.
+		if(n->left->op == ONAME && strncmp(n->left->sym->name, "autotmp_", 8) == 0)
+			n->left->defn = n;
 		goto ret;
 
 	case OAS2:
@@ -2346,7 +2351,7 @@ toomany:
  */
 
 static void
-fielddup(Node *n, Node *hash[], ulong nhash)
+fielddup(Node *n, Node **hash, ulong nhash)
 {
 	uint h;
 	char *s;
@@ -2367,7 +2372,7 @@ fielddup(Node *n, Node *hash[], ulong nhash)
 }
 
 static void
-keydup(Node *n, Node *hash[], ulong nhash)
+keydup(Node *n, Node **hash, ulong nhash)
 {
 	uint h;
 	ulong b;
@@ -2434,7 +2439,7 @@ keydup(Node *n, Node *hash[], ulong nhash)
 }
 
 static void
-indexdup(Node *n, Node *hash[], ulong nhash)
+indexdup(Node *n, Node **hash, ulong nhash)
 {
 	uint h;
 	Node *a;
@@ -2549,7 +2554,7 @@ static void
 typecheckcomplit(Node **np)
 {
 	int bad, i, nerr;
-	int64 len;
+	int64 length;
 	Node *l, *n, *norig, *r, **hash;
 	NodeList *ll;
 	Type *t, *f;
@@ -2603,7 +2608,7 @@ typecheckcomplit(Node **np)
 	case TARRAY:
 		nhash = inithash(n, &hash, autohash, nelem(autohash));
 
-		len = 0;
+		length = 0;
 		i = 0;
 		for(ll=n->list; ll; ll=ll->next) {
 			l = ll->n;
@@ -2626,11 +2631,11 @@ typecheckcomplit(Node **np)
 			if(i >= 0)
 				indexdup(l->left, hash, nhash);
 			i++;
-			if(i > len) {
-				len = i;
-				if(t->bound >= 0 && len > t->bound) {
+			if(i > length) {
+				length = i;
+				if(t->bound >= 0 && length > t->bound) {
 					setlineno(l);
-					yyerror("array index %lld out of bounds [0:%lld]", len-1, t->bound);
+					yyerror("array index %lld out of bounds [0:%lld]", length-1, t->bound);
 					t->bound = -1;	// no more errors
 				}
 			}
@@ -2642,9 +2647,9 @@ typecheckcomplit(Node **np)
 			l->right = assignconv(r, t->type, "array element");
 		}
 		if(t->bound == -100)
-			t->bound = len;
+			t->bound = length;
 		if(t->bound < 0)
-			n->right = nodintconst(len);
+			n->right = nodintconst(length);
 		n->op = OARRAYLIT;
 		break;
 
@@ -2805,7 +2810,7 @@ checklvalue(Node *n, char *verb)
 		yyerror("cannot %s %N", verb, n);
 }
 
-static void
+void
 checkassign(Node *n)
 {
 	if(islvalue(n))

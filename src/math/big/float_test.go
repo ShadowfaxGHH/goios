@@ -79,11 +79,6 @@ func testFloatRound(t *testing.T, x, r int64, prec uint, mode RoundingMode) {
 
 // TestFloatRound tests basic rounding.
 func TestFloatRound(t *testing.T) {
-	// TODO(gri) fix test for 32bit platforms
-	if _W == 32 {
-		return
-	}
-
 	var tests = []struct {
 		prec                        uint
 		x, zero, neven, naway, away string // input, results rounded to prec bits
@@ -213,7 +208,7 @@ func TestFloatSetUint64(t *testing.T) {
 	for _, want := range tests {
 		f := new(Float).SetUint64(want)
 		if got := f.Uint64(); got != want {
-			t.Errorf("got %d (%s); want %d", got, f.PString(), want)
+			t.Errorf("got %d (%s); want %d", got, f.pstring(), want)
 		}
 	}
 }
@@ -236,7 +231,7 @@ func TestFloatSetInt64(t *testing.T) {
 			}
 			f := new(Float).SetInt64(want)
 			if got := f.Int64(); got != want {
-				t.Errorf("got %d (%s); want %d", got, f.PString(), want)
+				t.Errorf("got %d (%s); want %d", got, f.pstring(), want)
 			}
 		}
 	}
@@ -261,7 +256,7 @@ func TestFloatSetFloat64(t *testing.T) {
 			}
 			f := new(Float).SetFloat64(want)
 			if got, _ := f.Float64(); got != want {
-				t.Errorf("got %g (%s); want %g", got, f.PString(), want)
+				t.Errorf("got %g (%s); want %g", got, f.pstring(), want)
 			}
 		}
 	}
@@ -293,11 +288,6 @@ var bitsList = [...][]int{
 // respective floating-point addition/subtraction for a variety of precisions
 // and rounding modes.
 func TestFloatAdd(t *testing.T) {
-	// TODO(gri) fix test for 32bit platforms
-	if _W == 32 {
-		return
-	}
-
 	for _, xbits := range bitsList {
 		for _, ybits := range bitsList {
 			// exact values
@@ -308,7 +298,6 @@ func TestFloatAdd(t *testing.T) {
 
 			for i, mode := range [...]RoundingMode{ToZero, ToNearestEven, AwayFromZero} {
 				for _, prec := range precList {
-					// +
 					got := NewFloat(0, prec, mode)
 					got.Add(x, y)
 					want := roundBits(zbits, prec, mode)
@@ -318,12 +307,11 @@ func TestFloatAdd(t *testing.T) {
 						return
 					}
 
-					// -
 					got.Sub(z, x)
 					want = roundBits(ybits, prec, mode)
 					if got.Cmp(want) != 0 {
-						t.Errorf("i = %d, prec = %d, %s:\n\t     %s\n\t-    %s\n\t=    %s\n\twant %s",
-							i, prec, mode, x, y, got, want)
+						t.Errorf("i = %d, prec = %d, %s:\n\t     %s %v\n\t-    %s %v\n\t=    %s\n\twant %s",
+							i, prec, mode, z, zbits, x, xbits, got, want)
 					}
 				}
 			}
@@ -389,14 +377,14 @@ func TestFloatAdd64(t *testing.T) {
 			got, acc := z.Float64()
 			want := x0 + y0
 			if got != want || acc != Exact {
-				t.Errorf("d = %d: %g + %g = %g; want %g exactly", d, x0, y0, got, acc, want)
+				t.Errorf("d = %d: %g + %g = %g (%s); want %g exactly", d, x0, y0, got, acc, want)
 			}
 
 			z.Sub(z, y)
 			got, acc = z.Float64()
 			want -= y0
 			if got != want || acc != Exact {
-				t.Errorf("d = %d: %g - %g = %g; want %g exactly", d, x0+y0, y0, got, acc, want)
+				t.Errorf("d = %d: %g - %g = %g (%s); want %g exactly", d, x0+y0, y0, got, acc, want)
 			}
 		}
 	}
@@ -677,34 +665,29 @@ func fromBits(bits ...int) *Float {
 }
 
 func TestFromBits(t *testing.T) {
-	// TODO(gri) fix test for 32bit platforms
-	if _W == 32 {
-		return
-	}
-
 	var tests = []struct {
 		bits []int
 		want string
 	}{
 		// all different bit numbers
-		{nil, "0.0p0"},
-		{[]int{0}, "0.8000000000000000p1"},
-		{[]int{1}, "0.8000000000000000p2"},
-		{[]int{-1}, "0.8000000000000000p0"},
-		{[]int{63}, "0.8000000000000000p64"},
+		{nil, "0"},
+		{[]int{0}, "0.8p1"},
+		{[]int{1}, "0.8p2"},
+		{[]int{-1}, "0.8p0"},
+		{[]int{63}, "0.8p64"},
 		{[]int{33, -30}, "0.8000000000000001p34"},
 		{[]int{255, 0}, "0.8000000000000000000000000000000000000000000000000000000000000001p256"},
 
 		// multiple equal bit numbers
-		{[]int{0, 0}, "0.8000000000000000p2"},
-		{[]int{0, 0, 0, 0}, "0.8000000000000000p3"},
-		{[]int{0, 1, 0}, "0.8000000000000000p3"},
-		{append([]int{2, 1, 0} /* 7 */, []int{3, 1} /* 10 */ ...), "0.8800000000000000p5" /* 17 */},
+		{[]int{0, 0}, "0.8p2"},
+		{[]int{0, 0, 0, 0}, "0.8p3"},
+		{[]int{0, 1, 0}, "0.8p3"},
+		{append([]int{2, 1, 0} /* 7 */, []int{3, 1} /* 10 */ ...), "0.88p5" /* 17 */},
 	}
 
 	for _, test := range tests {
 		f := fromBits(test.bits...)
-		if got := f.PString(); got != test.want {
+		if got := f.pstring(); got != test.want {
 			t.Errorf("setBits(%v) = %s; want %s", test.bits, got, test.want)
 		}
 	}
@@ -774,18 +757,18 @@ func TestFloatSetFloat64String(t *testing.T) {
 	}
 }
 
-func TestFloatPString(t *testing.T) {
+func TestFloatpstring(t *testing.T) {
 	var tests = []struct {
 		x    Float
 		want string
 	}{
-		{Float{}, "0.0p0"},
-		{Float{neg: true}, "-0.0p0"},
+		{Float{}, "0"},
+		{Float{neg: true}, "-0"},
 		{Float{mant: nat{0x87654321}}, "0.87654321p0"},
 		{Float{mant: nat{0x87654321}, exp: -10}, "0.87654321p-10"},
 	}
 	for _, test := range tests {
-		if got := test.x.PString(); got != test.want {
+		if got := test.x.pstring(); got != test.want {
 			t.Errorf("%v: got %s; want %s", test.x, got, test.want)
 		}
 	}

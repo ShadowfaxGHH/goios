@@ -368,6 +368,12 @@ func gcwork(force int32) {
 	if force == 0 {
 		gctimer.cycle.sweepterm = nanotime()
 	}
+
+	if trace.enabled {
+		traceGoSched()
+		traceGCStart()
+	}
+
 	// Pick up the remaining unswept/not being swept spans before we STW
 	for gosweepone() != ^uintptr(0) {
 		sweep.nbgsweep++
@@ -389,6 +395,14 @@ func gcwork(force int32) {
 		gctimer.cycle.markterm = nanotime()
 		systemstack(stoptheworld)
 		systemstack(gcinstalloffwb_m)
+	} else {
+		// For non-concurrent GC (force != 0) g stack have not been scanned so
+		// set gcscanvalid such that mark termination scans all stacks.
+		// No races here since we are in a STW phase.
+		for _, gp := range allgs {
+			gp.gcworkdone = false  // set to true in gcphasework
+			gp.gcscanvalid = false // stack has not been scanned
+		}
 	}
 
 	startTime := nanotime()
@@ -422,6 +436,11 @@ func gcwork(force int32) {
 	systemstack(func() {
 		gccheckmark_m(startTime, eagersweep)
 	})
+
+	if trace.enabled {
+		traceGCDone()
+		traceGoStart()
+	}
 
 	// all done
 	mp.gcing = 0

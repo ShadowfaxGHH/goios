@@ -1492,3 +1492,162 @@ func g() (x interface{}) { // ERROR "moved to heap: x"
 	x = &x // ERROR "&x escapes to heap"
 	return
 }
+
+var sink interface{}
+
+type Lit struct {
+	p *int
+}
+
+func ptrlitNoescape() {
+	// Both literal and element do not escape.
+	i := 0
+	x := &Lit{&i} // ERROR "&Lit literal does not escape" "&i does not escape"
+	_ = x
+}
+
+func ptrlitNoEscape2() {
+	// Literal does not escape, but element does.
+	i := 0 // ERROR "moved to heap: i"
+	x := &Lit{&i} // ERROR "&Lit literal does not escape" "&i escapes to heap"
+	sink = *x
+}
+
+func ptrlitEscape() {
+	// Both literal and element escape.
+	i := 0 // ERROR "moved to heap: i"
+	x := &Lit{&i} // ERROR "&Lit literal escapes to heap" "&i escapes to heap"
+	sink = x
+}
+
+// self-assignments
+
+type Buffer struct {
+	arr  [64]byte
+	buf1 []byte
+	buf2 []byte
+	str1 string
+	str2 string
+}
+
+func (b *Buffer) foo() { // ERROR "b does not escape"
+	b.buf1 = b.buf1[1:2]   // ERROR "ignoring self-assignment to b.buf1"
+	b.buf1 = b.buf1[1:2:3] // ERROR "ignoring self-assignment to b.buf1"
+	b.buf1 = b.buf2[1:2]   // ERROR "ignoring self-assignment to b.buf1"
+	b.buf1 = b.buf2[1:2:3] // ERROR "ignoring self-assignment to b.buf1"
+}
+
+func (b *Buffer) bar() { // ERROR "leaking param: b"
+	b.buf1 = b.arr[1:2] // ERROR "b.arr escapes to heap"
+}
+
+func (b *Buffer) baz() { // ERROR "b does not escape"
+	b.str1 = b.str1[1:2] // ERROR "ignoring self-assignment to b.str1"
+	b.str1 = b.str2[1:2] // ERROR "ignoring self-assignment to b.str1"
+}
+
+func (b *Buffer) bat() { // ERROR "leaking param: b"
+	o := new(Buffer) // ERROR "new\(Buffer\) escapes to heap"
+	o.buf1 = b.buf1[1:2]
+	sink = o
+}
+
+func quux(sp *string, bp *[]byte) { // ERROR "sp does not escape" "bp does not escape"
+	*sp = (*sp)[1:2] // ERROR "quux ignoring self-assignment to \*sp"
+	*bp = (*bp)[1:2] // ERROR "quux ignoring self-assignment to \*bp"
+}
+
+type StructWithString struct {
+	p *int
+	s string
+}
+
+// This is escape analysis false negative.
+// We assign the pointer to x.p but leak x.s. Escape analysis coarsens flows
+// to just x, and thus &i looks escaping.
+func fieldFlowTracking() {
+	var x StructWithString
+	i := 0 // ERROR "moved to heap: i"
+	x.p = &i // ERROR "&i escapes to heap"
+	sink = x.s
+}
+
+// String operations.
+
+func slicebytetostring0() {
+	b := make([]byte, 20) // ERROR "does not escape"
+	s := string(b)        // ERROR "string\(b\) does not escape"
+	_ = s
+}
+
+func slicebytetostring1() {
+	b := make([]byte, 20) // ERROR "does not escape"
+	s := string(b)        // ERROR "string\(b\) does not escape"
+	s1 := s[0:1]
+	_ = s1
+}
+
+func slicebytetostring2() {
+	b := make([]byte, 20) // ERROR "does not escape"
+	s := string(b)        // ERROR "string\(b\) escapes to heap"
+	s1 := s[0:1]          // ERROR "moved to heap: s1"
+	sink = &s1            // ERROR "&s1 escapes to heap"
+}
+
+func slicebytetostring3() {
+	b := make([]byte, 20) // ERROR "does not escape"
+	s := string(b)        // ERROR "string\(b\) escapes to heap"
+	s1 := s[0:1]
+	sink = s1
+}
+
+func addstr0() {
+	s0 := "a"
+	s1 := "b"
+	s := s0 + s1 // ERROR "s0 \+ s1 does not escape"
+	_ = s
+}
+
+func addstr1() {
+	s0 := "a"
+	s1 := "b"
+	s := "c"
+	s += s0 + s1 // ERROR "s0 \+ s1 does not escape"
+	_ = s
+}
+
+func addstr2() {
+	b := make([]byte, 20) // ERROR "does not escape"
+	s0 := "a"
+	s := string(b) + s0 // ERROR "string\(b\) does not escape" "string\(b\) \+ s0 does not escape"
+	_ = s
+}
+
+func addstr3() {
+	s0 := "a"
+	s1 := "b"
+	s := s0 + s1 // ERROR "s0 \+ s1 escapes to heap"
+	s2 := s[0:1]
+	sink = s2
+}
+
+func intstring0() bool {
+	// string does not escape
+	x := '0'
+	s := string(x) // ERROR "string\(x\) does not escape"
+	return s == "0"
+}
+
+func intstring1() string {
+	// string does not escape, but the buffer does
+	x := '0'
+	s := string(x) // ERROR "string\(x\) escapes to heap"
+	return s
+}
+
+func intstring2() {
+	// string escapes to heap
+	x := '0'
+	s := string(x) // ERROR "string\(x\) escapes to heap" "moved to heap: s"
+	sink = &s      // ERROR "&s escapes to heap"
+}

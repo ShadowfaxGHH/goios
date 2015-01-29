@@ -91,7 +91,7 @@ enum
 void
 usage(void)
 {
-	print("usage: %cg [options] file.go...\n", thechar);
+	print("usage: %cg [options] file.go...\n", arch.thechar);
 	flagprint(1);
 	exits("usage");
 }
@@ -128,22 +128,25 @@ catcher(void *v, char *s)
 void
 doversion(void)
 {
-	char *p;
+	char *p, *sep;
 
 	p = expstring();
 	if(strcmp(p, "X:none") == 0)
 		p = "";
-	print("%cg version %s%s%s\n", thechar, getgoversion(), *p ? " " : "", p);
+	sep = "";
+	if(*p)
+		sep = " ";
+	print("%cg version %s%s%s\n", arch.thechar, getgoversion(), sep, p);
 	exits(0);
 }
 
 int
-main(int argc, char *argv[])
+gcmain(int argc, char *argv[])
 {
 	int i;
 	NodeList *l;
 	char *p;
-
+	
 #ifdef	SIGBUS	
 	signal(SIGBUS, fault);
 	signal(SIGSEGV, fault);
@@ -154,55 +157,55 @@ main(int argc, char *argv[])
 	// Tell the FPU to handle all exceptions.
 	setfcr(FPPDBL|FPRNR);
 #endif
-	// Allow GOARCH=thestring or GOARCH=thestringsuffix,
+	// Allow GOARCH=arch.thestring or GOARCH=arch.thestringsuffix,
 	// but not other values.	
 	p = getgoarch();
-	if(strncmp(p, thestring, strlen(thestring)) != 0)
-		sysfatal("cannot use %cg with GOARCH=%s", thechar, p);
+	if(strncmp(p, arch.thestring, strlen(arch.thestring)) != 0)
+		sysfatal("cannot use %cg with GOARCH=%s", arch.thechar, p);
 	goarch = p;
 
-	linkarchinit();
-	ctxt = linknew(thelinkarch);
+	arch.linkarchinit();
+	ctxt = linknew(arch.thelinkarch);
 	ctxt->diag = yyerror;
 	ctxt->bso = &bstdout;
 	Binit(&bstdout, 1, OWRITE);
 
-	localpkg = mkpkg(strlit(""));
+	localpkg = mkpkg(newstrlit(""));
 	localpkg->prefix = "\"\"";
 	
 	// pseudo-package, for scoping
-	builtinpkg = mkpkg(strlit("go.builtin"));
+	builtinpkg = mkpkg(newstrlit("go.builtin"));
 
 	// pseudo-package, accessed by import "unsafe"
-	unsafepkg = mkpkg(strlit("unsafe"));
+	unsafepkg = mkpkg(newstrlit("unsafe"));
 	unsafepkg->name = "unsafe";
 
 	// real package, referred to by generated runtime calls
-	runtimepkg = mkpkg(strlit("runtime"));
+	runtimepkg = mkpkg(newstrlit("runtime"));
 	runtimepkg->name = "runtime";
 
 	// pseudo-packages used in symbol tables
-	gostringpkg = mkpkg(strlit("go.string"));
+	gostringpkg = mkpkg(newstrlit("go.string"));
 	gostringpkg->name = "go.string";
 	gostringpkg->prefix = "go.string";	// not go%2estring
 
-	itabpkg = mkpkg(strlit("go.itab"));
+	itabpkg = mkpkg(newstrlit("go.itab"));
 	itabpkg->name = "go.itab";
 	itabpkg->prefix = "go.itab";	// not go%2eitab
 
-	weaktypepkg = mkpkg(strlit("go.weak.type"));
+	weaktypepkg = mkpkg(newstrlit("go.weak.type"));
 	weaktypepkg->name = "go.weak.type";
 	weaktypepkg->prefix = "go.weak.type";  // not go%2eweak%2etype
 	
-	typelinkpkg = mkpkg(strlit("go.typelink"));
+	typelinkpkg = mkpkg(newstrlit("go.typelink"));
 	typelinkpkg->name = "go.typelink";
 	typelinkpkg->prefix = "go.typelink"; // not go%2etypelink
 
-	trackpkg = mkpkg(strlit("go.track"));
+	trackpkg = mkpkg(newstrlit("go.track"));
 	trackpkg->name = "go.track";
 	trackpkg->prefix = "go.track";  // not go%2etrack
 
-	typepkg = mkpkg(strlit("type"));
+	typepkg = mkpkg(newstrlit("type"));
 	typepkg->name = "type";
 
 	goroot = getgoroot();
@@ -260,7 +263,7 @@ main(int argc, char *argv[])
 	flagcount("wb", "enable write barrier", &use_writebarrier);
 	flagcount("x", "debug lexer", &debug['x']);
 	flagcount("y", "debug declarations in canned imports (with -d)", &debug['y']);
-	if(thechar == '6')
+	if(arch.thechar == '6')
 		flagcount("largemodel", "generate code that assumes a large memory model", &flag_largemodel);
 
 	flagparse(&argc, &argv, usage);
@@ -271,7 +274,7 @@ main(int argc, char *argv[])
 		usage();
 
 	if(flag_race) {
-		racepkg = mkpkg(strlit("runtime/race"));
+		racepkg = mkpkg(newstrlit("runtime/race"));
 		racepkg->name = "race";
 	}
 	
@@ -301,7 +304,7 @@ main(int argc, char *argv[])
 	if(debug['l'] <= 1)
 		debug['l'] = 1 - debug['l'];
 
-	if(thechar == '8') {
+	if(arch.thechar == '8') {
 		p = getgo386();
 		if(strcmp(p, "387") == 0)
 			use_sse = 0;
@@ -312,7 +315,7 @@ main(int argc, char *argv[])
 	}
 
 	fmtinstallgo();
-	betypeinit();
+	arch.betypeinit();
 	if(widthptr == 0)
 		fatal("betypeinit failed");
 
@@ -571,7 +574,7 @@ findpkg(Strlit *name)
 		snprint(namebuf, sizeof(namebuf), "%Z.a", name);
 		if(access(namebuf, 0) >= 0)
 			return 1;
-		snprint(namebuf, sizeof(namebuf), "%Z.%c", name, thechar);
+		snprint(namebuf, sizeof(namebuf), "%Z.%c", name, arch.thechar);
 		if(access(namebuf, 0) >= 0)
 			return 1;
 		return 0;
@@ -593,7 +596,7 @@ findpkg(Strlit *name)
 		snprint(namebuf, sizeof(namebuf), "%s/%Z.a", p->dir, name);
 		if(access(namebuf, 0) >= 0)
 			return 1;
-		snprint(namebuf, sizeof(namebuf), "%s/%Z.%c", p->dir, name, thechar);
+		snprint(namebuf, sizeof(namebuf), "%s/%Z.%c", p->dir, name, arch.thechar);
 		if(access(namebuf, 0) >= 0)
 			return 1;
 	}
@@ -610,7 +613,7 @@ findpkg(Strlit *name)
 		snprint(namebuf, sizeof(namebuf), "%s/pkg/%s_%s%s%s/%Z.a", goroot, goos, goarch, suffixsep, suffix, name);
 		if(access(namebuf, 0) >= 0)
 			return 1;
-		snprint(namebuf, sizeof(namebuf), "%s/pkg/%s_%s%s%s/%Z.%c", goroot, goos, goarch, suffixsep, suffix, name, thechar);
+		snprint(namebuf, sizeof(namebuf), "%s/pkg/%s_%s%s%s/%Z.%c", goroot, goos, goarch, suffixsep, suffix, name, arch.thechar);
 		if(access(namebuf, 0) >= 0)
 			return 1;
 	}
@@ -620,7 +623,7 @@ findpkg(Strlit *name)
 static void
 fakeimport(void)
 {
-	importpkg = mkpkg(strlit("fake"));
+	importpkg = mkpkg(newstrlit("fake"));
 	cannedimports("fake.6", "$$\n");
 }
 
@@ -693,7 +696,7 @@ importfile(Val *f, int line)
 		strcat(cleanbuf, "/");
 		strcat(cleanbuf, path->s);
 		cleanname(cleanbuf);
-		path = strlit(cleanbuf);
+		path = newstrlit(cleanbuf);
 		
 		if(isbadimport(path)) {
 			fakeimport();
@@ -2253,10 +2256,10 @@ lexfini(void)
 	}
 
 	// backend-specific builtin types (e.g. int).
-	for(i=0; typedefs[i].name; i++) {
-		s = lookup(typedefs[i].name);
+	for(i=0; arch.typedefs[i].name; i++) {
+		s = lookup(arch.typedefs[i].name);
 		if(s->def == N) {
-			s->def = typenod(types[typedefs[i].etype]);
+			s->def = typenod(types[arch.typedefs[i].etype]);
 			s->origpkg = builtinpkg;
 		}
 	}
@@ -2554,6 +2557,6 @@ mkpackage(char* pkgname)
 		p = strrchr(namebuf, '.');
 		if(p != nil)
 			*p = 0;
-		outfile = smprint("%s.%c", namebuf, thechar);
+		outfile = smprint("%s.%c", namebuf, arch.thechar);
 	}
 }

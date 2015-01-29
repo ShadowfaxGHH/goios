@@ -502,13 +502,16 @@ func drainworkbuf(wbuf *workbuf, drainallwbufs bool) {
 	}
 }
 
-// Scan at most count objects in the wbuf.
+// Scan count objects starting with those in wbuf.
 //go:nowritebarrier
 func drainobjects(wbuf *workbuf, count uintptr) {
 	for i := uintptr(0); i < count; i++ {
 		if wbuf.nobj == 0 {
 			putempty(wbuf)
-			return
+			wbuf = trygetfull()
+			if wbuf == nil {
+				return
+			}
 		}
 
 		// This might be a good place to add prefetch code...
@@ -587,7 +590,10 @@ func markroot(desc *parfor, i uint32) {
 		}
 
 		// Shrink a stack if not much of it is being used but not in the scan phase.
-		if gcphase != _GCscan { // Do not shrink during GCscan phase.
+		if gcphase == _GCmarktermination {
+			// Shrink during STW GCmarktermination phase thus avoiding
+			// complications introduced by shrinking during
+			// non-STW phases.
 			shrinkstack(gp)
 		}
 		if readgstatus(gp) == _Gdead {
@@ -853,6 +859,9 @@ func scanframe(frame *stkframe, unused unsafe.Pointer) bool {
 
 //go:nowritebarrier
 func scanstack(gp *g) {
+	if gp.gcscanvalid {
+		return
+	}
 
 	if readgstatus(gp)&_Gscan == 0 {
 		print("runtime:scanstack: gp=", gp, ", goid=", gp.goid, ", gp->atomicstatus=", hex(readgstatus(gp)), "\n")
@@ -882,6 +891,7 @@ func scanstack(gp *g) {
 
 	gentraceback(^uintptr(0), ^uintptr(0), 0, gp, 0, nil, 0x7fffffff, scanframe, nil, 0)
 	tracebackdefers(gp, scanframe, nil)
+	gp.gcscanvalid = true
 }
 
 // Shade the object if it isn't already.
@@ -945,6 +955,7 @@ func gcphasework(gp *g) {
 	case _GCscan:
 		// scan the stack, mark the objects, put pointers in work buffers
 		// hanging off the P where this is being run.
+		// Indicate that the scan is valid until the goroutine runs again
 		scanstack(gp)
 	case _GCmark:
 		// No work.
@@ -1003,6 +1014,11 @@ func mSpan_Sweep(s *mspan, preserve bool) bool {
 		print("MSpan_Sweep: state=", s.state, " sweepgen=", s.sweepgen, " mheap.sweepgen=", sweepgen, "\n")
 		throw("MSpan_Sweep: bad span state")
 	}
+
+	if trace.enabled {
+		traceGCSweepStart()
+	}
+
 	cl := s.sizeclass
 	size := s.elemsize
 	res := false
@@ -1091,7 +1107,12 @@ func mSpan_Sweep(s *mspan, preserve bool) bool {
 			}
 			c.local_nlargefree++
 			c.local_largefree += size
-			xadd64(&memstats.next_gc, -int64(size)*int64(gcpercent+100)/100)
+			reduction := int64(size) * int64(gcpercent+100) / 100
+			if int64(memstats.next_gc)-reduction > int64(heapminimum) {
+				xadd64(&memstats.next_gc, -reduction)
+			} else {
+				atomicstore64(&memstats.next_gc, heapminimum)
+			}
 			res = true
 		} else {
 			// Free small object.
@@ -1128,9 +1149,18 @@ func mSpan_Sweep(s *mspan, preserve bool) bool {
 	if nfree > 0 {
 		c.local_nsmallfree[cl] += uintptr(nfree)
 		c.local_cachealloc -= intptr(uintptr(nfree) * size)
-		xadd64(&memstats.next_gc, -int64(nfree)*int64(size)*int64(gcpercent+100)/100)
+		reduction := int64(nfree) * int64(size) * int64(gcpercent+100) / 100
+		if int64(memstats.next_gc)-reduction > int64(heapminimum) {
+			xadd64(&memstats.next_gc, -reduction)
+		} else {
+			atomicstore64(&memstats.next_gc, heapminimum)
+		}
 		res = mCentral_FreeSpan(&mheap_.central[cl].mcentral, s, int32(nfree), head, end, preserve)
 		// MCentral_FreeSpan updates sweepgen
+	}
+	if trace.enabled {
+		traceGCSweepDone()
+		traceNextGC()
 	}
 	return res
 }
@@ -1212,10 +1242,18 @@ func gchelper() {
 	_g_.m.traceback = 2
 	gchelperstart()
 
+	if trace.enabled {
+		traceGCScanStart()
+	}
+
 	// parallel mark for over GC roots
 	parfordo(work.markfor)
 	if gcphase != _GCscan {
 		scanblock(0, 0, nil) // blocks in getfull
+	}
+
+	if trace.enabled {
+		traceGCScanDone()
 	}
 
 	nproc := work.nproc // work.nproc can change right after we increment work.ndone
@@ -1335,6 +1373,11 @@ func updatememstats(stats *gcstats) {
 	memstats.heap_objects = memstats.nmalloc - memstats.nfree
 }
 
+// heapminimum is the minimum number of bytes in the heap.
+// This cleans up the corner case of where we have a very small live set but a lot
+// of allocations and collecting every GOGC * live set is expensive.
+var heapminimum = uint64(4 << 20)
+
 func gcinit() {
 	if unsafe.Sizeof(workbuf{}) != _WorkbufSize {
 		throw("runtime: size of Workbuf is suboptimal")
@@ -1344,7 +1387,7 @@ func gcinit() {
 	gcpercent = readgogc()
 	gcdatamask = unrollglobgcprog((*byte)(unsafe.Pointer(&gcdata)), uintptr(unsafe.Pointer(&edata))-uintptr(unsafe.Pointer(&data)))
 	gcbssmask = unrollglobgcprog((*byte)(unsafe.Pointer(&gcbss)), uintptr(unsafe.Pointer(&ebss))-uintptr(unsafe.Pointer(&bss)))
-	memstats.next_gc = 4 << 20 // 4 megs to start with
+	memstats.next_gc = heapminimum
 }
 
 // Called from malloc.go using onM, stopping and starting the world handled in caller.
@@ -1438,7 +1481,8 @@ func gcscan_m() {
 	local_allglen := allglen
 	for i := uintptr(0); i < local_allglen; i++ {
 		gp := allgs[i]
-		gp.gcworkdone = false // set to true in gcphasework
+		gp.gcworkdone = false  // set to true in gcphasework
+		gp.gcscanvalid = false // stack has not been scanned
 	}
 	unlock(&allglock)
 
@@ -1540,6 +1584,10 @@ func gc(start_time int64, eagersweep bool) {
 		gp.gcworkdone = false // set to true in gcphasework
 	}
 
+	if trace.enabled {
+		traceGCScanStart()
+	}
+
 	parforsetup(work.markfor, work.nproc, uint32(_RootCount+allglen), nil, false, markroot)
 	if work.nproc > 1 {
 		noteclear(&work.alldone)
@@ -1572,6 +1620,10 @@ func gc(start_time int64, eagersweep bool) {
 		notesleep(&work.alldone)
 	}
 
+	if trace.enabled {
+		traceGCScanDone()
+	}
+
 	shrinkfinish()
 
 	cachestats()
@@ -1581,6 +1633,13 @@ func gc(start_time int64, eagersweep bool) {
 	// conservatively set next_gc to high value assuming that everything is live
 	// concurrent/lazy sweep will reduce this number while discovering new garbage
 	memstats.next_gc = memstats.heap_alloc + memstats.heap_alloc*uint64(gcpercent)/100
+	if memstats.next_gc < heapminimum {
+		memstats.next_gc = heapminimum
+	}
+
+	if trace.enabled {
+		traceNextGC()
+	}
 
 	t4 := nanotime()
 	atomicstore64(&memstats.last_gc, uint64(unixnanotime())) // must be Unix time to make sense to user

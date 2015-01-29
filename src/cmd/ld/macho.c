@@ -420,6 +420,12 @@ asmbmacho(void)
 		default:
 			diag("unknown macho architecture");
 			errorexit();
+		case '5':
+			ml = newMachoLoad(5, 17+2);	/* unix thread */
+			ml->data[0] = 1;	/* thread type */
+			ml->data[1] = 17;	/* word count */
+			ml->data[2+15] = entryvalue();	/* start pc */
+			break;
 		case '6':
 			ml = newMachoLoad(5, 42+2);	/* unix thread */
 			ml->data[0] = 4;	/* thread type */
@@ -432,12 +438,6 @@ asmbmacho(void)
 			ml->data[0] = 1;	/* thread type */
 			ml->data[1] = 16;	/* word count */
 			ml->data[2+10] = entryvalue();	/* start pc */
-			break;
-		case '5':
-			ml = newMachoLoad(5, 17+2);	/* unix thread */
-			ml->data[0] = 1;	/* thread type */
-			ml->data[1] = 17;	/* word count */
-			ml->data[2+15] = entryvalue();	/* start pc */
 			break;
 		}
 	}

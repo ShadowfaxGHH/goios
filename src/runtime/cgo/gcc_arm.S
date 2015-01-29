@@ -12,7 +12,7 @@
 #endif
 
 // Apple's ld64 wants 4-byte alignment for ARM code sections.
-// .align in both Apple as and GNU as treat the number as powers of 2.
+// .align in both Apple as and GNU as treat n as aligning to 2**n bytes.
 .align	2
 
 /*

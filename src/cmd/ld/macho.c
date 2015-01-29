@@ -357,6 +357,10 @@ asmbmacho(void)
 	default:
 		diag("unknown mach architecture");
 		errorexit();
+	case '5':
+		mh->cpu = MACHO_CPU_ARM;
+		mh->subcpu = MACHO_SUBCPU_ARMV7;
+		break;
 	case '6':
 		mh->cpu = MACHO_CPU_AMD64;
 		mh->subcpu = MACHO_SUBCPU_X86;
@@ -364,10 +368,6 @@ asmbmacho(void)
 	case '8':
 		mh->cpu = MACHO_CPU_386;
 		mh->subcpu = MACHO_SUBCPU_X86;
-		break;
-	case '5':
-		mh->cpu = MACHO_CPU_ARM;
-		mh->subcpu = MACHO_SUBCPU_ARMV7;
 		break;
 	}
 	

@@ -148,14 +148,14 @@ linknew(LinkArch *arch)
 		switch(ctxt->arch->thechar) {
 		default:
 			sysfatal("unknown thread-local storage offset for nacl/%s", ctxt->arch->name);
+		case '5':
+			ctxt->tlsoffset = 0;
+			break;
 		case '6':
 			ctxt->tlsoffset = 0;
 			break;
 		case '8':
 			ctxt->tlsoffset = -8;
-			break;
-		case '5':
-			ctxt->tlsoffset = 0;
 			break;
 		}
 		break;

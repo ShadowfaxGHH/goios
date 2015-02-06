@@ -143,12 +143,12 @@ var gcpercent int32
 // The procedure is:
 //
 //	semacquire(&worldsema);
-//	m.gcing = 1;
+//	m.preemptoff = "reason";
 //	stoptheworld();
 //
 //	... do stuff ...
 //
-//	m.gcing = 0;
+//	m.preemptoff = "";
 //	semrelease(&worldsema);
 //	starttheworld();
 //
@@ -1390,7 +1390,7 @@ func gcinit() {
 	memstats.next_gc = heapminimum
 }
 
-// Called from malloc.go using onM, stopping and starting the world handled in caller.
+// Called from malloc.go using systemstack, stopping and starting the world handled in caller.
 //go:nowritebarrier
 func gc_m(start_time int64, eagersweep bool) {
 	_g_ := getg()
@@ -1419,7 +1419,7 @@ func clearCheckmarks() {
 	}
 }
 
-// Called from malloc.go using onM.
+// Called from malloc.go using systemstack.
 // The world is stopped. Rerun the scan and mark phases
 // using the bitMarkedCheck bit instead of the
 // bitMarked bit. If the marking encounters an
@@ -1490,7 +1490,7 @@ func gcscan_m() {
 	work.ndone = 0
 	work.nproc = 1 // For now do not do this in parallel.
 	//	ackgcphase is not needed since we are not scanning running goroutines.
-	parforsetup(work.markfor, work.nproc, uint32(_RootCount+local_allglen), nil, false, markroot)
+	parforsetup(work.markfor, work.nproc, uint32(_RootCount+local_allglen), false, markroot)
 	parfordo(work.markfor)
 
 	lock(&allglock)
@@ -1588,7 +1588,7 @@ func gc(start_time int64, eagersweep bool) {
 		traceGCScanStart()
 	}
 
-	parforsetup(work.markfor, work.nproc, uint32(_RootCount+allglen), nil, false, markroot)
+	parforsetup(work.markfor, work.nproc, uint32(_RootCount+allglen), false, markroot)
 	if work.nproc > 1 {
 		noteclear(&work.alldone)
 		helpgc(int32(work.nproc))

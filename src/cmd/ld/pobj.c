@@ -209,7 +209,7 @@ ldmain(int argc, char **argv)
 
 	// FIXME(minux): a dirty hack for iDevice native compiling
 	// without requiring the device to disable codesign enforcement.
-	if(nerrors == 0 && HEADTYPE == Hdarwin && thechar == '5') {
+	if(nerrors == 0 && HEADTYPE == Hdarwin && ctxt->thechar == '5') {
 		char *argv[4] = {"ldid", "-S", outfile};
 		if(debug['v']) {
 			int i;

@@ -32,7 +32,6 @@ var (
 	workdir          string
 	tooldir          string
 	gochar           string
-	goversion        string
 	oldgoos          string
 	oldgoarch        string
 	oldgochar        string
@@ -223,8 +222,6 @@ func xinit() {
 	// Make the environment more predictable.
 	os.Setenv("LANG", "C")
 	os.Setenv("LANGUAGE", "en_US.UTF8")
-
-	goversion = findgoversion()
 
 	workdir = xworkdir()
 	xatexit(rmworkdir)
@@ -426,6 +423,7 @@ func setup() {
 	}
 
 	// For release, make sure excluded things are excluded.
+	goversion := findgoversion()
 	if strings.HasPrefix(goversion, "release.") || (strings.HasPrefix(goversion, "go") && !strings.Contains(goversion, "beta")) {
 		for _, dir := range unreleased {
 			if p := pathf("%s/%s", goroot, dir); isdir(p) {
@@ -531,16 +529,16 @@ var deptab = []struct {
 		"$GOROOT/pkg/obj/${GOHOSTOS}_$GOHOSTARCH/libgc.a",
 	}},
 	{"cmd/5l", []string{
-		"../ld/*",
+		"$GOROOT/pkg/obj/${GOHOSTOS}_$GOHOSTARCH/libld.a",
 	}},
 	{"cmd/6l", []string{
-		"../ld/*",
+		"$GOROOT/pkg/obj/${GOHOSTOS}_$GOHOSTARCH/libld.a",
 	}},
 	{"cmd/8l", []string{
-		"../ld/*",
+		"$GOROOT/pkg/obj/${GOHOSTOS}_$GOHOSTARCH/libld.a",
 	}},
 	{"cmd/9l", []string{
-		"../ld/*",
+		"$GOROOT/pkg/obj/${GOHOSTOS}_$GOHOSTARCH/libld.a",
 	}},
 	{"cmd/go", []string{
 		"zdefaultcc.go",
@@ -626,7 +624,7 @@ func install(dir string) {
 		ldargs = splitfields(defaultldflags)
 	}
 
-	islib := strings.HasPrefix(dir, "lib") || dir == "cmd/gc"
+	islib := strings.HasPrefix(dir, "lib") || dir == "cmd/gc" || dir == "cmd/ld"
 	ispkg := !islib && !strings.HasPrefix(dir, "cmd/")
 	isgo := ispkg || dir == "cmd/go" || dir == "cmd/cgo"
 
@@ -903,7 +901,7 @@ func install(dir string) {
 					"-D", fmt.Sprintf("GOOS=%q", goos),
 					"-D", fmt.Sprintf("GOARCH=%q", goarch),
 					"-D", fmt.Sprintf("GOROOT=%q", goroot_final),
-					"-D", fmt.Sprintf("GOVERSION=%q", goversion),
+					"-D", fmt.Sprintf("GOVERSION=%q", findgoversion()),
 					"-D", fmt.Sprintf("GOARM=%q", goarm),
 					"-D", fmt.Sprintf("GO386=%q", go386),
 					"-D", fmt.Sprintf("GO_EXTLINK_ENABLED=%q", goextlinkenabled),
@@ -1103,6 +1101,7 @@ var buildorder = []string{
 	"liblink",
 
 	"cmd/gc",  // must be before g
+	"cmd/ld",  // must be before l
 	"cmd/%sl", // must be before a, g
 	"cmd/%sa",
 	"cmd/%sg",
@@ -1460,5 +1459,5 @@ func cmdbanner() {
 // Version prints the Go version.
 func cmdversion() {
 	xflagparse(0)
-	xprintf("%s\n", goversion)
+	xprintf("%s\n", findgoversion())
 }

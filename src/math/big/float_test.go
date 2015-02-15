@@ -6,10 +6,211 @@ package big
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+func (x *Float) uint64() uint64 {
+	u, acc := x.Uint64()
+	if acc != Exact {
+		panic(fmt.Sprintf("%s is not a uint64", x.Format('g', 10)))
+	}
+	return u
+}
+
+func (x *Float) int64() int64 {
+	i, acc := x.Int64()
+	if acc != Exact {
+		panic(fmt.Sprintf("%s is not an int64", x.Format('g', 10)))
+	}
+	return i
+}
+
+func TestFloatZeroValue(t *testing.T) {
+	// zero (uninitialized) value is a ready-to-use 0.0
+	var x Float
+	if s := x.Format('f', 1); s != "0.0" {
+		t.Errorf("zero value = %s; want 0.0", s)
+	}
+
+	// zero value has precision 0
+	if prec := x.Prec(); prec != 0 {
+		t.Errorf("prec = %d; want 0", prec)
+	}
+
+	// zero value can be used in any and all positions of binary operations
+	make := func(x int) *Float {
+		var f Float
+		if x != 0 {
+			f.SetInt64(int64(x))
+		}
+		// x == 0 translates into the zero value
+		return &f
+	}
+	for _, test := range []struct {
+		z, x, y, want int
+		opname        rune
+		op            func(z, x, y *Float) *Float
+	}{
+		{0, 0, 0, 0, '+', (*Float).Add},
+		{0, 1, 2, 3, '+', (*Float).Add},
+		{1, 2, 0, 2, '+', (*Float).Add},
+		{2, 0, 1, 1, '+', (*Float).Add},
+
+		{0, 0, 0, 0, '-', (*Float).Sub},
+		{0, 1, 2, -1, '-', (*Float).Sub},
+		{1, 2, 0, 2, '-', (*Float).Sub},
+		{2, 0, 1, -1, '-', (*Float).Sub},
+
+		{0, 0, 0, 0, '*', (*Float).Mul},
+		{0, 1, 2, 2, '*', (*Float).Mul},
+		{1, 2, 0, 0, '*', (*Float).Mul},
+		{2, 0, 1, 0, '*', (*Float).Mul},
+
+		{0, 0, 0, 0, '/', (*Float).Quo}, // = +Inf
+		{0, 2, 1, 2, '/', (*Float).Quo},
+		{1, 2, 0, 0, '/', (*Float).Quo}, // = +Inf
+		{2, 0, 1, 0, '/', (*Float).Quo},
+	} {
+		z := make(test.z)
+		test.op(z, make(test.x), make(test.y))
+		got := 0
+		if !z.IsInf(0) {
+			got = int(z.int64())
+		}
+		if got != test.want {
+			t.Errorf("%d %c %d = %d; want %d", test.x, test.opname, test.y, got, test.want)
+		}
+	}
+
+	// TODO(gri) test how precision is set for zero value results
+}
+
+func makeFloat(s string) *Float {
+	if s == "Inf" || s == "+Inf" {
+		return NewInf(+1)
+	}
+	if s == "-Inf" {
+		return NewInf(-1)
+	}
+	var x Float
+	x.SetPrec(1000)
+	if _, ok := x.SetString(s); !ok {
+		panic(fmt.Sprintf("%q is not a valid float", s))
+	}
+	return &x
+}
+
+func TestFloatSign(t *testing.T) {
+	for _, test := range []struct {
+		x string
+		s int
+	}{
+		{"-Inf", -1},
+		{"-1", -1},
+		{"-0", 0},
+		{"+0", 0},
+		{"+1", +1},
+		{"+Inf", +1},
+	} {
+		x := makeFloat(test.x)
+		s := x.Sign()
+		if s != test.s {
+			t.Errorf("%s.Sign() = %d; want %d", test.x, s, test.s)
+		}
+	}
+}
+
+// feq(x, y) is like x.Cmp(y) == 0 but it also considers the sign of 0 (0 != -0).
+func feq(x, y *Float) bool {
+	return x.Cmp(y) == 0 && x.neg == y.neg
+}
+
+func TestFloatMantExp(t *testing.T) {
+	for _, test := range []struct {
+		x    string
+		frac string
+		exp  int
+	}{
+		{"0", "0", 0},
+		{"+0", "0", 0},
+		{"-0", "-0", 0},
+		{"Inf", "+Inf", 0},
+		{"+Inf", "+Inf", 0},
+		{"-Inf", "-Inf", 0},
+		{"1.5", "0.75", 1},
+		{"1.024e3", "0.5", 11},
+		{"-0.125", "-0.5", -2},
+	} {
+		x := makeFloat(test.x)
+		frac := makeFloat(test.frac)
+		f, e := x.MantExp()
+		if !feq(f, frac) || e != test.exp {
+			t.Errorf("%s.MantExp() = %s, %d; want %s, %d", test.x, f.Format('g', 10), e, test.frac, test.exp)
+		}
+	}
+}
+
+func TestFloatSetMantExp(t *testing.T) {
+	for _, test := range []struct {
+		frac string
+		exp  int
+		z    string
+	}{
+		{"0", 0, "0"},
+		{"+0", 0, "0"},
+		{"-0", 0, "-0"},
+		{"Inf", 1234, "+Inf"},
+		{"+Inf", -1234, "+Inf"},
+		{"-Inf", -1234, "-Inf"},
+		{"0", -MaxExp - 1, "0"},
+		{"1", -MaxExp - 1, "+Inf"},  // exponent magnitude too large
+		{"-1", -MaxExp - 1, "-Inf"}, // exponent magnitude too large
+		{"0.75", 1, "1.5"},
+		{"0.5", 11, "1024"},
+		{"-0.5", -2, "-0.125"},
+	} {
+		frac := makeFloat(test.frac)
+		want := makeFloat(test.z)
+		var z Float
+		z.SetMantExp(frac, test.exp)
+		if !feq(&z, want) {
+			t.Errorf("SetMantExp(%s, %d) = %s; want %s", test.frac, test.exp, z.Format('g', 10), test.z)
+		}
+	}
+}
+
+func TestFloatIsInt(t *testing.T) {
+	for _, test := range []string{
+		"0 int",
+		"-0 int",
+		"1 int",
+		"-1 int",
+		"0.5",
+		"1.23",
+		"1.23e1",
+		"1.23e2 int",
+		"0.000000001e+8",
+		"0.000000001e+9 int",
+		"1.2345e200 int",
+		"Inf",
+		"+Inf",
+		"-Inf",
+	} {
+		s := strings.TrimSuffix(test, " int")
+		want := s != test
+		if got := makeFloat(s).IsInt(); got != want {
+			t.Errorf("%s.IsInt() == %t", s, got)
+		}
+	}
+}
+
+func TestFloatIsInf(t *testing.T) {
+	// TODO(gri) implement this
+}
 
 func fromBinary(s string) int64 {
 	x, err := strconv.ParseInt(s, 2, 64)
@@ -62,18 +263,46 @@ func testFloatRound(t *testing.T, x, r int64, prec uint, mode RoundingMode) {
 	}
 
 	// round
-	f := new(Float).SetInt64(x)
-	f.Round(f, prec, mode)
+	f := new(Float).SetMode(mode).SetInt64(x).SetPrec(prec)
 
 	// check result
-	r1 := f.Int64()
-	p1 := f.Precision()
-	a1 := f.Accuracy()
+	r1 := f.int64()
+	p1 := f.Prec()
+	a1 := f.Acc()
 	if r1 != r || p1 != prec || a1 != a {
-		t.Errorf("Round(%s, %d, %s): got %s (%d bits, %s); want %s (%d bits, %s)",
+		t.Errorf("round %s (%d bits, %s) incorrect: got %s (%d bits, %s); want %s (%d bits, %s)",
 			toBinary(x), prec, mode,
 			toBinary(r1), p1, a1,
 			toBinary(r), prec, a)
+		return
+	}
+
+	// g and f should be the same
+	// (rounding by SetPrec after SetInt64 using default precision
+	// should be the same as rounding by SetInt64 after setting the
+	// precision)
+	g := new(Float).SetMode(mode).SetPrec(prec).SetInt64(x)
+	if !feq(g, f) {
+		t.Errorf("round %s (%d bits, %s) not symmetric: got %s and %s; want %s",
+			toBinary(x), prec, mode,
+			toBinary(g.int64()),
+			toBinary(r1),
+			toBinary(r),
+		)
+		return
+	}
+
+	// h and f should be the same
+	// (repeated rounding should be idempotent)
+	h := new(Float).SetMode(mode).SetPrec(prec).Set(f)
+	if !feq(h, f) {
+		t.Errorf("round %s (%d bits, %s) not idempotent: got %s and %s; want %s",
+			toBinary(x), prec, mode,
+			toBinary(h.int64()),
+			toBinary(r1),
+			toBinary(r),
+		)
+		return
 	}
 }
 
@@ -182,8 +411,7 @@ func TestFloatRound24(t *testing.T) {
 	const x0 = 1<<26 - 0x10 // 11...110000 (26 bits)
 	for d := 0; d <= 0x10; d++ {
 		x := float64(x0 + d)
-		f := new(Float).SetFloat64(x)
-		f.Round(f, 24, ToNearestEven)
+		f := new(Float).SetPrec(24).SetFloat64(x)
 		got, _ := f.Float64()
 		want := float64(float32(x))
 		if got != want {
@@ -203,9 +431,21 @@ func TestFloatSetUint64(t *testing.T) {
 		1 << 32,
 		1<<64 - 1,
 	} {
-		f := new(Float).SetUint64(want)
-		if got := f.Uint64(); got != want {
-			t.Errorf("got %d (%s); want %d", got, f.Format('p', 0), want)
+		var f Float
+		f.SetUint64(want)
+		if got := f.uint64(); got != want {
+			t.Errorf("got %#x (%s); want %#x", got, f.Format('p', 0), want)
+		}
+	}
+
+	// test basic rounding behavior (exhaustive rounding testing is done elsewhere)
+	const x uint64 = 0x8765432187654321 // 64 bits needed
+	for prec := uint(1); prec <= 64; prec++ {
+		f := new(Float).SetPrec(prec).SetMode(ToZero).SetUint64(x)
+		got := f.uint64()
+		want := x &^ (1<<(64-prec) - 1) // cut off (round to zero) low 64-prec bits
+		if got != want {
+			t.Errorf("got %#x (%s); want %#x", got, f.Format('p', 0), want)
 		}
 	}
 }
@@ -225,10 +465,22 @@ func TestFloatSetInt64(t *testing.T) {
 			if i&1 != 0 {
 				want = -want
 			}
-			f := new(Float).SetInt64(want)
-			if got := f.Int64(); got != want {
-				t.Errorf("got %d (%s); want %d", got, f.Format('p', 0), want)
+			var f Float
+			f.SetInt64(want)
+			if got := f.int64(); got != want {
+				t.Errorf("got %#x (%s); want %#x", got, f.Format('p', 0), want)
 			}
+		}
+	}
+
+	// test basic rounding behavior (exhaustive rounding testing is done elsewhere)
+	const x int64 = 0x7654321076543210 // 63 bits needed
+	for prec := uint(1); prec <= 63; prec++ {
+		f := new(Float).SetPrec(prec).SetMode(ToZero).SetInt64(x)
+		got := f.int64()
+		want := x &^ (1<<(63-prec) - 1) // cut off (round to zero) low 63-prec bits
+		if got != want {
+			t.Errorf("got %#x (%s); want %#x", got, f.Format('p', 0), want)
 		}
 	}
 }
@@ -244,21 +496,283 @@ func TestFloatSetFloat64(t *testing.T) {
 		3.14159265e10,
 		2.718281828e-123,
 		1.0 / 3,
+		math.Inf(-1),
+		math.Inf(0),
+		-math.Inf(1),
 	} {
 		for i := range [2]int{} {
 			if i&1 != 0 {
 				want = -want
 			}
-			f := new(Float).SetFloat64(want)
+			var f Float
+			f.SetFloat64(want)
 			if got, _ := f.Float64(); got != want {
 				t.Errorf("got %g (%s); want %g", got, f.Format('p', 0), want)
 			}
 		}
 	}
+
+	// test basic rounding behavior (exhaustive rounding testing is done elsewhere)
+	const x uint64 = 0x8765432143218 // 53 bits needed
+	for prec := uint(1); prec <= 52; prec++ {
+		f := new(Float).SetPrec(prec).SetMode(ToZero).SetFloat64(float64(x))
+		got, _ := f.Float64()
+		want := float64(x &^ (1<<(52-prec) - 1)) // cut off (round to zero) low 53-prec bits
+		if got != want {
+			t.Errorf("got %g (%s); want %g", got, f.Format('p', 0), want)
+		}
+	}
 }
 
 func TestFloatSetInt(t *testing.T) {
-	// TODO(gri) implement
+	for _, want := range []string{
+		"0",
+		"1",
+		"-1",
+		"1234567890",
+		"123456789012345678901234567890",
+		"123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890",
+	} {
+		var x Int
+		_, ok := x.SetString(want, 0)
+		if !ok {
+			t.Errorf("invalid integer %s", want)
+			continue
+		}
+		n := x.BitLen()
+
+		var f Float
+		f.SetInt(&x)
+
+		// check precision
+		if n < 64 {
+			n = 64
+		}
+		if prec := f.Prec(); prec != uint(n) {
+			t.Errorf("got prec = %d; want %d", prec, n)
+		}
+
+		// check value
+		got := f.Format('g', 100)
+		if got != want {
+			t.Errorf("got %s (%s); want %s", got, f.Format('p', 0), want)
+		}
+	}
+
+	// TODO(gri) test basic rounding behavior
+}
+
+func TestFloatSetRat(t *testing.T) {
+	for _, want := range []string{
+		"0",
+		"1",
+		"-1",
+		"1234567890",
+		"123456789012345678901234567890",
+		"123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890",
+		"1.2",
+		"3.14159265",
+		// TODO(gri) expand
+	} {
+		var x Rat
+		_, ok := x.SetString(want)
+		if !ok {
+			t.Errorf("invalid fraction %s", want)
+			continue
+		}
+		n := max(x.Num().BitLen(), x.Denom().BitLen())
+
+		var f1, f2 Float
+		f2.SetPrec(1000)
+		f1.SetRat(&x)
+		f2.SetRat(&x)
+
+		// check precision when set automatically
+		if n < 64 {
+			n = 64
+		}
+		if prec := f1.Prec(); prec != uint(n) {
+			t.Errorf("got prec = %d; want %d", prec, n)
+		}
+
+		got := f2.Format('g', 100)
+		if got != want {
+			t.Errorf("got %s (%s); want %s", got, f2.Format('p', 0), want)
+		}
+	}
+}
+
+func TestFloatUint64(t *testing.T) {
+	for _, test := range []struct {
+		x   string
+		out uint64
+		acc Accuracy
+	}{
+		{"-Inf", 0, Above},
+		{"-1", 0, Above},
+		{"-1e-1000", 0, Above},
+		{"-0", 0, Exact},
+		{"0", 0, Exact},
+		{"1e-1000", 0, Below},
+		{"1", 1, Exact},
+		{"1.000000000000000000001", 1, Below},
+		{"12345.0", 12345, Exact},
+		{"12345.000000000000000000001", 12345, Below},
+		{"18446744073709551615", 18446744073709551615, Exact},
+		{"18446744073709551615.000000000000000000001", math.MaxUint64, Below},
+		{"18446744073709551616", math.MaxUint64, Below},
+		{"1e10000", math.MaxUint64, Below},
+		{"+Inf", math.MaxUint64, Below},
+	} {
+		x := makeFloat(test.x)
+		out, acc := x.Uint64()
+		if out != test.out || acc != test.acc {
+			t.Errorf("%s: got %d (%s); want %d (%s)", test.x, out, acc, test.out, test.acc)
+		}
+	}
+}
+
+func TestFloatInt64(t *testing.T) {
+	for _, test := range []struct {
+		x   string
+		out int64
+		acc Accuracy
+	}{
+		{"-Inf", math.MinInt64, Above},
+		{"-1e10000", math.MinInt64, Above},
+		{"-9223372036854775809", math.MinInt64, Above},
+		{"-9223372036854775808.000000000000000000001", math.MinInt64, Above},
+		{"-9223372036854775808", -9223372036854775808, Exact},
+		{"-9223372036854775807.000000000000000000001", -9223372036854775807, Above},
+		{"-9223372036854775807", -9223372036854775807, Exact},
+		{"-12345.000000000000000000001", -12345, Above},
+		{"-12345.0", -12345, Exact},
+		{"-1.000000000000000000001", -1, Above},
+		{"-1", -1, Exact},
+		{"-1e-1000", 0, Above},
+		{"0", 0, Exact},
+		{"1e-1000", 0, Below},
+		{"1", 1, Exact},
+		{"1.000000000000000000001", 1, Below},
+		{"12345.0", 12345, Exact},
+		{"12345.000000000000000000001", 12345, Below},
+		{"9223372036854775807", 9223372036854775807, Exact},
+		{"9223372036854775807.000000000000000000001", math.MaxInt64, Below},
+		{"9223372036854775808", math.MaxInt64, Below},
+		{"1e10000", math.MaxInt64, Below},
+		{"+Inf", math.MaxInt64, Below},
+	} {
+		x := makeFloat(test.x)
+		out, acc := x.Int64()
+		if out != test.out || acc != test.acc {
+			t.Errorf("%s: got %d (%s); want %d (%s)", test.x, out, acc, test.out, test.acc)
+		}
+	}
+}
+
+func TestFloatInt(t *testing.T) {
+	for _, test := range []struct {
+		x   string
+		out string
+		acc Accuracy
+	}{
+		{"0", "0", Exact},
+		{"+0", "0", Exact},
+		{"-0", "0", Exact},
+		{"Inf", "nil", Below},
+		{"+Inf", "nil", Below},
+		{"-Inf", "nil", Above},
+		{"1", "1", Exact},
+		{"-1", "-1", Exact},
+		{"1.23", "1", Below},
+		{"-1.23", "-1", Above},
+		{"123e-2", "1", Below},
+		{"123e-3", "0", Below},
+		{"123e-4", "0", Below},
+		{"1e-1000", "0", Below},
+		{"-1e-1000", "0", Above},
+		{"1e+10", "10000000000", Exact},
+		{"1e+100", "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", Exact},
+	} {
+		x := makeFloat(test.x)
+		out, acc := x.Int()
+		got := "nil"
+		if out != nil {
+			got = out.String()
+		}
+		if got != test.out || acc != test.acc {
+			t.Errorf("%s: got %s (%s); want %s (%s)", test.x, got, acc, test.out, test.acc)
+		}
+	}
+}
+
+func TestFloatRat(t *testing.T) {
+	// TODO(gri) implement this
+}
+
+func TestFloatAbs(t *testing.T) {
+	for _, test := range []string{
+		"0",
+		"1",
+		"1234",
+		"1.23e-2",
+		"1e-1000",
+		"1e1000",
+		"Inf",
+	} {
+		p := makeFloat(test)
+		a := new(Float).Abs(p)
+		if !feq(a, p) {
+			t.Errorf("%s: got %s; want %s", test, a.Format('g', 10), test)
+		}
+
+		n := makeFloat("-" + test)
+		a.Abs(n)
+		if !feq(a, p) {
+			t.Errorf("-%s: got %s; want %s", test, a.Format('g', 10), test)
+		}
+	}
+}
+
+func TestFloatNeg(t *testing.T) {
+	for _, test := range []string{
+		"0",
+		"1",
+		"1234",
+		"1.23e-2",
+		"1e-1000",
+		"1e1000",
+		"Inf",
+	} {
+		p1 := makeFloat(test)
+		n1 := makeFloat("-" + test)
+		n2 := new(Float).Neg(p1)
+		p2 := new(Float).Neg(n2)
+		if !feq(n2, n1) {
+			t.Errorf("%s: got %s; want %s", test, n2.Format('g', 10), n1.Format('g', 10))
+		}
+		if !feq(p2, p1) {
+			t.Errorf("%s: got %s; want %s", test, p2.Format('g', 10), p1.Format('g', 10))
+		}
+	}
+}
+
+func TestFloatInc(t *testing.T) {
+	const n = 10
+	for _, prec := range precList {
+		if 1<<prec < n {
+			continue // prec must be large enough to hold all numbers from 0 to n
+		}
+		var x, one Float
+		x.SetPrec(prec)
+		one.SetInt64(1)
+		for i := 0; i < n; i++ {
+			x.Add(&x, &one)
+		}
+		if x.Cmp(new(Float).SetInt64(n)) != 0 {
+			t.Errorf("prec = %d: got %s; want %d", prec, &x, n)
+		}
+	}
 }
 
 // Selected precisions with which to run various tests.
@@ -293,7 +807,7 @@ func TestFloatAdd(t *testing.T) {
 
 			for i, mode := range [...]RoundingMode{ToZero, ToNearestEven, AwayFromZero} {
 				for _, prec := range precList {
-					got := NewFloat(0, prec, mode)
+					got := new(Float).SetPrec(prec).SetMode(mode)
 					got.Add(x, y)
 					want := roundBits(zbits, prec, mode)
 					if got.Cmp(want) != 0 {
@@ -333,7 +847,7 @@ func TestFloatAdd32(t *testing.T) {
 
 			x := new(Float).SetFloat64(x0)
 			y := new(Float).SetFloat64(y0)
-			z := NewFloat(0, 24, ToNearestEven)
+			z := new(Float).SetPrec(24)
 
 			z.Add(x, y)
 			got, acc := z.Float64()
@@ -366,7 +880,7 @@ func TestFloatAdd64(t *testing.T) {
 
 			x := new(Float).SetFloat64(x0)
 			y := new(Float).SetFloat64(y0)
-			z := NewFloat(0, 53, ToNearestEven)
+			z := new(Float).SetPrec(53)
 
 			z.Add(x, y)
 			got, acc := z.Float64()
@@ -386,6 +900,7 @@ func TestFloatAdd64(t *testing.T) {
 }
 
 func TestFloatMul(t *testing.T) {
+	// TODO(gri) implement this
 }
 
 // TestFloatMul64 tests that Float.Mul/Quo of numbers with
@@ -417,7 +932,7 @@ func TestFloatMul64(t *testing.T) {
 
 			x := new(Float).SetFloat64(x0)
 			y := new(Float).SetFloat64(y0)
-			z := NewFloat(0, 53, ToNearestEven)
+			z := new(Float).SetPrec(53)
 
 			z.Mul(x, y)
 			got, _ := z.Float64()
@@ -441,15 +956,15 @@ func TestFloatMul64(t *testing.T) {
 
 func TestIssue6866(t *testing.T) {
 	for _, prec := range precList {
-		two := NewFloat(2, prec, ToNearestEven)
-		one := NewFloat(1, prec, ToNearestEven)
-		three := NewFloat(3, prec, ToNearestEven)
-		msix := NewFloat(-6, prec, ToNearestEven)
-		psix := NewFloat(+6, prec, ToNearestEven)
+		two := new(Float).SetPrec(prec).SetInt64(2)
+		one := new(Float).SetPrec(prec).SetInt64(1)
+		three := new(Float).SetPrec(prec).SetInt64(3)
+		msix := new(Float).SetPrec(prec).SetInt64(-6)
+		psix := new(Float).SetPrec(prec).SetInt64(+6)
 
-		p := NewFloat(0, prec, ToNearestEven)
-		z1 := NewFloat(0, prec, ToNearestEven)
-		z2 := NewFloat(0, prec, ToNearestEven)
+		p := new(Float).SetPrec(prec)
+		z1 := new(Float).SetPrec(prec)
+		z2 := new(Float).SetPrec(prec)
 
 		// z1 = 2 + 1.0/3*-6
 		p.Quo(one, three)
@@ -495,13 +1010,13 @@ func TestFloatQuo(t *testing.T) {
 		// compute accurate x as z*y
 		y := new(Float).SetFloat64(3.14159265358979323e123)
 
-		x := NewFloat(0, z.Precision()+y.Precision(), ToZero)
+		x := new(Float).SetPrec(z.Prec() + y.Prec()).SetMode(ToZero)
 		x.Mul(z, y)
 
 		// leave for debugging
 		// fmt.Printf("x = %s\ny = %s\nz = %s\n", x, y, z)
 
-		if got := x.Accuracy(); got != Exact {
+		if got := x.Acc(); got != Exact {
 			t.Errorf("got acc = %s; want exact", got)
 		}
 
@@ -510,7 +1025,7 @@ func TestFloatQuo(t *testing.T) {
 		for _, mode := range [...]RoundingMode{ToZero, ToNearestEven, AwayFromZero} {
 			for d := -5; d < 5; d++ {
 				prec := uint(preci + d)
-				got := NewFloat(0, prec, mode).Quo(x, y)
+				got := new(Float).SetPrec(prec).SetMode(mode).Quo(x, y)
 				want := roundBits(bits, prec, mode)
 				if got.Cmp(want) != 0 {
 					t.Errorf("i = %d, prec = %d, %s:\n\t     %s\n\t/    %s\n\t=    %s\n\twant %s",
@@ -544,9 +1059,9 @@ func TestFloatQuoSmoke(t *testing.T) {
 			// vary operand precision (only ok as long as a, b can be represented correctly)
 			for ad := -dprec; ad <= dprec; ad++ {
 				for bd := -dprec; bd <= dprec; bd++ {
-					A := NewFloat(a, uint(prec+ad), 0)
-					B := NewFloat(b, uint(prec+bd), 0)
-					C := NewFloat(0, 53, 0).Quo(A, B) // C has float64 mantissa width
+					A := new(Float).SetPrec(uint(prec + ad)).SetFloat64(a)
+					B := new(Float).SetPrec(uint(prec + bd)).SetFloat64(b)
+					C := new(Float).SetPrec(53).Quo(A, B) // C has float64 mantissa width
 
 					cc, acc := C.Float64()
 					if cc != c {
@@ -560,6 +1075,10 @@ func TestFloatQuoSmoke(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestFloatCmp(t *testing.T) {
+	// TODO(gri) implement this
 }
 
 // normBits returns the normalized bits for x: It
@@ -653,7 +1172,7 @@ func roundBits(x []int, prec uint, mode RoundingMode) *Float {
 	}
 	if mode == ToNearestEven && rbit == 1 && (sbit == 1 || sbit == 0 && bit0 != 0) || mode == AwayFromZero {
 		// round away from zero
-		f.Round(f, prec, ToZero) // extend precision // TODO(gri) better approach?
+		f.SetMode(ToZero).SetPrec(prec)
 		f.Add(f, fromBits(int(r)+1))
 	}
 	return f
@@ -667,7 +1186,6 @@ func fromBits(bits ...int) *Float {
 	// handle 0
 	if len(bits) == 0 {
 		return new(Float)
-		// z.prec = ?
 	}
 	// len(bits) > 0
 

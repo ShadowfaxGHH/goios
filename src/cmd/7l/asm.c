@@ -33,6 +33,7 @@
 #include	"l.h"
 #include	"../ld/lib.h"
 #include	"../ld/elf.h"
+#include	"../ld/macho.h"
 #include	"../ld/dwarf.h"
 
 
@@ -142,10 +143,58 @@ elfsetupplt(void)
 int
 machoreloc1(Reloc *r, vlong sectoff)
 {
-	USED(r);
-	USED(sectoff);
+	uint32 v;
+	LSym *rs;
 
-	return -1;
+	rs = r->xsym;
+
+	if(rs->type == SHOSTOBJ || r->type == R_CALLARM64) {
+		if(rs->dynid < 0) {
+			diag("reloc %d to non-macho symbol %s type=%d", r->type, rs->name, rs->type);
+			return -1;
+		}
+		v = rs->dynid;
+		v |= 1<<27; // external relocation
+	} else {
+		v = rs->sect->extnum;
+		if(v == 0) {
+			diag("reloc %d to symbol %s in non-macho section %s type=%d", r->type, rs->name, rs->sect->name, rs->type);
+			return -1;
+		}
+	}
+
+	switch(r->type) {
+	default:
+		return -1;
+	case R_ADDR:
+		v |= MACHO_ARM64_RELOC_UNSIGNED<<28;
+		break;
+	case R_CALLARM:
+		v |= 1<<24; // pc-relative bit
+		v |= MACHO_ARM64_RELOC_BRANCH26<<28;
+		break;
+	}
+
+	switch(r->siz) {
+	default:
+		return -1;
+	case 1:
+		v |= 0<<25;
+		break;
+	case 2:
+		v |= 1<<25;
+		break;
+	case 4:
+		v |= 2<<25;
+		break;
+	case 8:
+		v |= 3<<25;
+		break;
+	}
+
+	LPUT(sectoff);
+	LPUT(v);
+	return 0;
 }
 
 int
@@ -164,6 +213,14 @@ archreloc(Reloc *r, LSym *s, vlong *val)
 			*val = (0xfc000000u & (uint32)r->add);
 			r->xadd = ((~0xfc000000u) & ((uint32)r->add))*4;
 			r->add = 0;
+
+			// ld64 for arm seems to want the symbol table to contain offset
+			// into the section rather than pseudo virtual address that contains
+			// the section load address.
+			// we need to compensate that by removing the instruction's address
+			// from addend.
+			if(HEADTYPE == Hdarwin)
+				r->xadd -= symaddr(s) + r->off;
 			return 0;
 		}
 	}
@@ -219,7 +276,7 @@ adddynlib(char *lib)
 void
 asmb(void)
 {
-	uint32 symo;
+	uint32 symo, dwarfoff, machlink;
 	Section *sect;
 	LSym *sym;
 	int i;
@@ -255,6 +312,22 @@ asmb(void)
 	cseek(segdata.fileoff);
 	datblk(segdata.vaddr, segdata.filelen);
 
+	machlink = 0;
+	if(HEADTYPE == Hdarwin) {
+		if(debug['v'])
+			Bprint(&bso, "%5.2f dwarf\n", cputime());
+
+		if(!debug['w']) { // TODO(minux): enable DWARF Support
+			dwarfoff = rnd(HEADR+segtext.len, INITRND) + rnd(segdata.filelen, INITRND);
+			cseek(dwarfoff);
+
+			segdwarf.fileoff = cpos();
+			dwarfemitdebugsections();
+			segdwarf.filelen = cpos() - segdwarf.fileoff;
+		}
+		machlink = domacholink();
+	}
+
 	/* output symbol table */
 	symsize = 0;
 	lcsize = 0;
@@ -270,6 +343,9 @@ asmb(void)
 				goto ElfSym;
 		case Hplan9:
 			symo = segdata.fileoff+segdata.filelen;
+			break;
+		case Hdarwin:
+			symo = rnd(HEADR+segtext.filelen, INITRND)+rnd(segdata.filelen, INITRND)+machlink;
 			break;
 		ElfSym:
 			symo = segdata.fileoff+segdata.filelen;
@@ -307,6 +383,10 @@ asmb(void)
 				cflush();
 			}
 			break;
+		case Hdarwin:
+			if(linkmode == LinkExternal)
+				machoemitreloc();
+			break;
 		}
 	}
 
@@ -333,6 +413,9 @@ asmb(void)
 	case Hopenbsd:
 	case Hnacl:
 		asmbelf(symo);
+		break;
+	case Hdarwin:
+		asmbmacho();
 		break;
 	}
 	cflush();

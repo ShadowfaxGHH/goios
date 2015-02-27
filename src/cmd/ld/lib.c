@@ -212,6 +212,13 @@ loadlib(void)
 		// Force external linking for android.
 		if(strcmp(goos, "android") == 0)
 			linkmode = LinkExternal;
+		// cgo on Darwin/ARM64 must use external linking
+		// we can always use external linking, but then there will be circular
+		// dependency problems when compiling natively (external linking requires
+		// runtime/cgo, runtime/cgo requires cmd/cgo, but cmd/cgo needs to be
+		// compiled using external linking.)
+		if(thechar == '7' && HEADTYPE == Hdarwin && iscgo)
+			linkmode = LinkExternal;
 	}
 
 	if(linkmode == LinkExternal && !iscgo) {

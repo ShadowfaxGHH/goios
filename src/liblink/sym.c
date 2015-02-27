@@ -170,6 +170,9 @@ linknew(LinkArch *arch)
 		case '6':
 			ctxt->tlsoffset = 0x8a0;
 			break;
+		case '7':
+			ctxt->tlsoffset = 0; // dummy value, not used
+			break;
 		case '8':
 			ctxt->tlsoffset = 0x468;
 			break;

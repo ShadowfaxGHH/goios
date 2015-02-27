@@ -362,6 +362,10 @@ asmbmacho(void)
 		mh->cpu = MACHO_CPU_AMD64;
 		mh->subcpu = MACHO_SUBCPU_X86;
 		break;
+	case '7':
+		mh->cpu = MACHO_CPU_ARM64;
+		mh->subcpu = MACHO_SUBCPU_ARM64_ALL;
+		break;
 	case '8':
 		mh->cpu = MACHO_CPU_386;
 		mh->subcpu = MACHO_SUBCPU_X86;
@@ -423,6 +427,13 @@ asmbmacho(void)
 			ml->data[1] = 42;	/* word count */
 			ml->data[2+32] = entryvalue();	/* start pc */
 			ml->data[2+32+1] = entryvalue()>>16>>16;	// hide >>32 for 8l
+			break;
+		case '7':
+			ml = newMachoLoad(5, 68+2);	/* unix thread */
+			ml->data[0] = 6;	/* thread type */
+			ml->data[1] = 68;	/* word count */
+			ml->data[2+64] = entryvalue();	/* start pc */
+			ml->data[2+64+1] = entryvalue()>>16>>16;	// hide >>32 for 8l
 			break;
 		case '8':
 			ml = newMachoLoad(5, 16+2);	/* unix thread */

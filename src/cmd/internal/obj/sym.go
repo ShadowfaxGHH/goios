@@ -201,6 +201,9 @@ func Linknew(arch *LinkArch) *Link {
 		case '6':
 			ctxt.Tlsoffset = 0x8a0
 
+		case '7':
+			ctxt.Tlsoffset = 0 // dummy value, not used
+
 		case '8':
 			ctxt.Tlsoffset = 0x468
 			break

@@ -169,7 +169,7 @@ machoreloc1(Reloc *r, vlong sectoff)
 	case R_ADDR:
 		v |= MACHO_ARM64_RELOC_UNSIGNED<<28;
 		break;
-	case R_CALLARM:
+	case R_CALLARM64:
 		v |= 1<<24; // pc-relative bit
 		v |= MACHO_ARM64_RELOC_BRANCH26<<28;
 		break;

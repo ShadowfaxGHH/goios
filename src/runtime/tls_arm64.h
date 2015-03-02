@@ -6,6 +6,10 @@
 #define TPIDR TPIDR_EL0
 #endif
 
+#ifdef GOOS_darwin
+#define TPIDR TPIDRRO_EL0
+#endif
+
 // Define something that will break the build if
 // the GOOS is unknown.
 #ifndef TPIDR

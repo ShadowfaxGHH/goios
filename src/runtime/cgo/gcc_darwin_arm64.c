@@ -137,6 +137,8 @@ x_cgo_init(G *g, void (*setg)(void*), void **tlsg, void **tlsbase)
 	pthread_attr_t attr;
 	size_t size;
 
+fprintf(stderr, "x_cgo_init = %p\n", &x_cgo_init); // aid debugging in presence of ASLR
+
 	setg_gcc = setg;
 	pthread_attr_init(&attr);
 	pthread_attr_getstacksize(&attr, &size);
@@ -145,6 +147,8 @@ x_cgo_init(G *g, void (*setg)(void*), void **tlsg, void **tlsbase)
 
 	// yes, tlsbase from mrs might not be correctly aligned.
 	inittls(tlsg, (void**)((uintptr)tlsbase & ~7));
+
+fprintf(stderr, "inittls ok, x_cgo_init done.\n");
 
 	// TODO(minux): disabled until upstream this.
 	return;

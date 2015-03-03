@@ -156,7 +156,7 @@ machoreloc1(Reloc *r, vlong sectoff)
 
 	rs = r->xsym;
 
-	if(rs->type == SHOSTOBJ || r->type == R_CALLARM64) {
+	if(rs->type == SHOSTOBJ || r->type == R_CALLARM64 || r->type == R_ADDRARM64) {
 		if(rs->dynid < 0) {
 			diag("reloc %d to non-macho symbol %s type=%d", r->type, rs->name, rs->type);
 			return -1;
@@ -180,6 +180,23 @@ machoreloc1(Reloc *r, vlong sectoff)
 	case R_CALLARM64:
 		v |= 1<<24; // pc-relative bit
 		v |= MACHO_ARM64_RELOC_BRANCH26<<28;
+		break;
+	case R_ADDRARM64:
+		r->siz = 4;
+		// Two relocation entries: MACHO_ARM64_RELOC_PAGEOFF12 MACHO_ARM64_RELOC_PAGE21
+		// if r->xadd is not zero, add two MACHO_ARM64_RELOC_ADDEND.
+		if(r->xadd != 0) {
+			LPUT(sectoff + 4);
+			LPUT((MACHO_ARM64_RELOC_ADDEND<<28) | (2<<25) | (r->xadd & 0xffffff));
+		}
+		LPUT(sectoff + 4);
+		LPUT(v | (MACHO_ARM64_RELOC_PAGEOFF12<<28) | (2<<25));
+		if(r->xadd != 0) {
+			LPUT(sectoff);
+			LPUT((MACHO_ARM64_RELOC_ADDEND<<28) | (2<<25) | (r->xadd & 0xffffff));
+		}
+		v |= 1<<24; // pc-relative bit
+		v |= MACHO_ARM64_RELOC_PAGE21<<28;
 		break;
 	}
 
@@ -263,16 +280,30 @@ archreloc(Reloc *r, LSym *s, vlong *val)
 				diag("missing section for %s", rs->name);
 			r->xsym = rs;
 
-			switch(ctxt->headtype) {
+//print("reloc %s+%x to %s add = %d\n", s->name, r->off, r->xsym->name, r->xadd);
+			switch(HEADTYPE) {
 			default:
-				diag("archreloc: unknown headtype %s", headstr(ctxt->headtype));
+				diag("archreloc: unknown headtype %s", headstr(HEADTYPE));
+				break;
+			case Hdarwin:
+				// Mach-O wants the addend to be encoded in the instruction
+				// Note that although Mach-O supports ARM64_RELOC_ADDEND, it
+				// can only encode 24-bit of signed addend, but the instructions
+				// supports 33-bit of signed addend.
+				if(r->xadd > 0x7fffff || r->xadd < -0x800000) {
+					print("reloc %s+%x to %s add = %d <embed>\n", s->name, r->off, r->xsym->name, r->xadd);
+					relocaddr(r, s, val, r->xadd);
+					r->xadd = 0;
+				} else {
+					relocaddr(r, s, val, 0);
+				}
 				break;
 			case Hlinux:
 				// ELF can encode the addend into rela entry
 				relocaddr(r, s, val, 0);
 				break;
 			}
-			break;
+			return 0;
 
 		case R_CALLARM64:
 			r->done = 0;
@@ -338,6 +369,8 @@ adddynlib(char *lib)
 		if(s->size == 0)
 			addstring(s, "");
 		elfwritedynent(linklookup(ctxt, ".dynamic", 0), DT_NEEDED, addstring(s, lib));
+	} else if(HEADTYPE == Hdarwin) {
+		machoadddynlib(lib);
 	} else {
 		diag("adddynlib: unsupported binary format");
 	}

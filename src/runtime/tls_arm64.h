@@ -8,10 +8,15 @@
 
 #ifdef GOOS_darwin
 #define TPIDR TPIDRRO_EL0
+#define TLSG_IS_VARIABLE
 #endif
 
 // Define something that will break the build if
 // the GOOS is unknown.
 #ifndef TPIDR
 #define TPIDR TPIDR_UNKNOWN
+#endif
+
+#ifndef TLSG_IS_VARIABLE
+#define TLSG_IS_PLACEHOLDER
 #endif

@@ -301,7 +301,10 @@ machoshbits(MachoSeg *mseg, Section *sect, char *segname)
 		if(*p == '.')
 			*p = '_';
 
-	msect = newMachoSect(mseg, estrdup(buf), segname);
+	if(!(sect->rwx & 1) && thechar == '7') // arm64 doesn't allow abs reloc in __TEXT
+		msect = newMachoSect(mseg, estrdup(buf), "__DATA");
+	else
+		msect = newMachoSect(mseg, estrdup(buf), segname);
 	if(sect->rellen > 0) {
 		msect->reloc = sect->reloff;
 		msect->nreloc = sect->rellen / 8;

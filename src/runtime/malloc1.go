@@ -99,6 +99,9 @@ func mallocinit() {
 	// See https://code.google.com/p/go/issues/detail?id=5049
 	// TODO(rsc): Fix after 1.1.
 	limit = 0
+	if goos_darwin * goarch_arm64 == 1 {
+		limit = 1000<<20
+	}
 
 	// Set up the allocation arena, a contiguous area of memory where
 	// allocated data will be found.  The arena begins with a bitmap large

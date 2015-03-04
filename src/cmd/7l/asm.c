@@ -181,6 +181,13 @@ machoreloc1(Reloc *r, vlong sectoff)
 		v |= MACHO_ARM64_RELOC_UNSIGNED<<28;
 		break;
 	case R_CALLARM64:
+		if(r->xadd != 0) {
+			diag("ld64 doesn't allow BR26 reloc with non-zero addend: %s+%ld", rs->name, r->xadd);
+		}
+		//if(r->xadd != 0) {
+		//	LPUT(sectoff);
+		//	LPUT((MACHO_ARM64_RELOC_ADDEND<<28) | (2<<25) | (r->xadd & 0xffffff));
+		//}
 		v |= 1<<24; // pc-relative bit
 		v |= MACHO_ARM64_RELOC_BRANCH26<<28;
 		break;
@@ -315,13 +322,11 @@ archreloc(Reloc *r, LSym *s, vlong *val)
 			r->xadd = ((~0xfc000000u) & ((uint32)r->add))*4;
 			r->add = 0;
 
-			// ld64 for arm seems to want the symbol table to contain offset
-			// into the section rather than pseudo virtual address that contains
-			// the section load address.
-			// we need to compensate that by removing the instruction's address
-			// from addend.
 			if(HEADTYPE == Hdarwin)
-				r->xadd -= symaddr(s) + r->off;
+			if(r->xadd > 0x7fffff || r->xadd < -0x800000) {
+				diag("reloc %s+%x to %s add = %d is too large.\n", s->name, r->off, r->xsym->name, r->xadd);
+			}
+
 			return 0;
 		}
 	}

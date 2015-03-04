@@ -73,7 +73,7 @@ zerorange(Prog *p, vlong frame, vlong lo, vlong hi)
 	if(cnt < 4*widthptr) {
 		for(i = 0; i < cnt; i += widthptr)
 			p = appendpp(p, AMOV, D_REG, REGZERO, 0, D_OREG, REGSP, 8+frame+lo+i);
-	} else if(cnt <= 128*widthptr) {
+	} else if(cnt <= 128*widthptr && !darwin) {
 		p = appendpp(p, AMOV, D_SP, REGSP, 0, D_REG, REGRT1, 0);
 		p = appendpp(p, AADD, D_CONST, NREG, 8+frame+lo-8, D_REG, REGRT1, 0);
 		p->reg = REGRT1;
@@ -925,7 +925,7 @@ clearfat(Node *nl)
 		regfree(&end);
 		// The loop leaves R16 on the last zeroed dword
 		boff = 8;
-	} else if(q >= 4) {
+	} else if(q >= 4 && !darwin) {
 		p = gins(ASUB, N, &dst);
 		p->from.type = D_CONST;
 		p->from.offset = 8;

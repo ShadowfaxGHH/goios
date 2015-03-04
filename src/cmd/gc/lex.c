@@ -269,6 +269,7 @@ main(int argc, char *argv[])
 	goos = getgoos();
 
 	nacl = strcmp(goos, "nacl") == 0;
+	darwin = strcmp(goos, "darwin") == 0;
 	if(nacl)
 		flag_largemodel = 1;
 

@@ -1001,6 +1001,7 @@ EXTERN	int	writearchive;
 EXTERN	Biobuf	bstdout;
 
 EXTERN	int	nacl;
+EXTERN	int	darwin;
 
 /*
  *	y.tab.c

@@ -37,6 +37,8 @@
 #define	SYS_kevent         363
 #define	SYS_fcntl          92
 
+#define STUB(x) MOV x, R0; MOV $SYS_exit, R16; SVC $0x80;
+
 TEXT notok<>(SB),NOSPLIT,$0
 	MOV	$0, R8
 	MOV	R8, (R8)
@@ -76,7 +78,7 @@ TEXT runtime·read(SB),NOSPLIT,$0
 	MOVW	R0, ret+24(FP)
 	RETURN
 
-TEXT runtime·exit(SB),NOSPLIT,$-4
+TEXT runtime·exit(SB),NOSPLIT,$-8
 	MOVW	0(FP), R0
 	MOVW	$SYS_exit, R16
 	SVC	$0x80
@@ -93,7 +95,7 @@ TEXT runtime·exit1(SB),NOSPLIT,$0
 	MOV	$1003, R1
 	MOV	R0, (R1)	// fail hard
 
-TEXT runtime·raise(SB),NOSPLIT,$24
+TEXT runtime·raise(SB),NOSPLIT,$0
 	MOVW	$SYS_getpid, R16
 	SVC	$0x80
 	// arg 1 pid already in R0 from getpid
@@ -112,7 +114,7 @@ TEXT runtime·mmap(SB),NOSPLIT,$0
 	MOVW	off+28(FP), R5
 	MOVW	$SYS_mmap, R16
 	SVC	$0x80
-	MOVW	R0, ret+24(FP)
+	MOV	R0, ret+32(FP)
 	RETURN
 
 TEXT runtime·munmap(SB),NOSPLIT,$0
@@ -142,7 +144,7 @@ TEXT runtime·setitimer(SB),NOSPLIT,$0
 	SVC	$0x80
 	RETURN
 
-TEXT time·now(SB),NOSPLIT,$16-12
+TEXT time·now(SB),NOSPLIT,$32-12
 	MOV	RSP, R0	// timeval
 	MOV	R0, R9	// this is how dyld calls gettimeofday
 	MOVW	$0, R1	// zone
@@ -292,7 +294,7 @@ TEXT runtime·sysctl(SB),NOSPLIT,$0
 	MOV	size+24(FP), R3
 	MOV	dst+32(FP), R4
 	MOV	ndst+40(FP), R5
-	MOVW	$SYS___sysctl, R16 // syscall entry
+	MOVW	$SYS___sysctl, R16
 	SVC	$0x80
 	BCC	ok
 	NEG	R0, R0
@@ -348,25 +350,25 @@ TEXT runtime·mach_msg_trap(SB),NOSPLIT,$0
 	MOVW	rcv_name+20(FP), R4
 	MOVW	timeout+24(FP), R5
 	MOVW	notify+28(FP), R6
-	MOVN	$30, R12
+	MOVN	$30, R16
 	SVC	$0x80
 	MOVW	R0, ret+32(FP)
 	RETURN
 
 TEXT runtime·mach_task_self(SB),NOSPLIT,$0
-	MOVN	$27, R12 // task_self_trap
+	MOVN	$27, R16 // task_self_trap
 	SVC	$0x80
 	MOVW	R0, 0(FP)
 	RETURN
 
 TEXT runtime·mach_thread_self(SB),NOSPLIT,$0
-	MOVN	$26, R12 // thread_self_trap
+	MOVN	$26, R16 // thread_self_trap
 	SVC	$0x80
 	MOVW	R0, 0(FP)
 	RETURN
 
 TEXT runtime·mach_reply_port(SB),NOSPLIT,$0
-	MOVN	$25, R12	// mach_reply_port
+	MOVN	$25, R16	// mach_reply_port
 	SVC	$0x80
 	MOVW	R0, 0(FP)
 	RETURN
@@ -377,7 +379,7 @@ TEXT runtime·mach_reply_port(SB),NOSPLIT,$0
 // uint32 mach_semaphore_wait(uint32)
 TEXT runtime·mach_semaphore_wait(SB),NOSPLIT,$0
 	MOVW	sema+0(FP), R0
-	MOVN	$35, R12	// semaphore_wait_trap
+	MOVN	$35, R16	// semaphore_wait_trap
 	SVC	$0x80
 	MOVW	R0, ret+8(FP)
 	RETURN
@@ -387,7 +389,7 @@ TEXT runtime·mach_semaphore_timedwait(SB),NOSPLIT,$0
 	MOVW	0(FP), R0
 	MOVW	4(FP), R1
 	MOVW	8(FP), R2
-	MOVN	$37, R12	// semaphore_timedwait_trap
+	MOVN	$37, R16	// semaphore_timedwait_trap
 	SVC	$0x80
 	MOVW	R0, ret+16(FP)
 	RETURN
@@ -395,7 +397,7 @@ TEXT runtime·mach_semaphore_timedwait(SB),NOSPLIT,$0
 // uint32 mach_semaphore_signal(uint32)
 TEXT runtime·mach_semaphore_signal(SB),NOSPLIT,$0
 	MOVW	sema+0(FP), R0
-	MOVN	$32, R12	// semaphore_signal_trap
+	MOVN	$32, R16	// semaphore_signal_trap
 	SVC	$0x80
 	MOVW	R0, ret+8(FP)
 	RETURN
@@ -403,7 +405,7 @@ TEXT runtime·mach_semaphore_signal(SB),NOSPLIT,$0
 // uint32 mach_semaphore_signal_all(uint32)
 TEXT runtime·mach_semaphore_signal_all(SB),NOSPLIT,$0
 	MOVW	sema+0(FP), R0
-	MOVN	$33, R12	// semaphore_signal_all_trap
+	MOVN	$33, R16	// semaphore_signal_all_trap
 	SVC	$0x80
 	MOVW	R0, ret+8(FP)
 	RETURN
@@ -429,7 +431,7 @@ TEXT runtime·kevent(SB),NOSPLIT,$0
 	SVC	$0x80
 	BCC	2(PC)
 	NEG	R0, R0
-	MOVW	R0, ret+24(FP)
+	MOVW	R0, ret+48(FP)
 	RETURN
 
 // int32 runtime·closeonexec(int32 fd)

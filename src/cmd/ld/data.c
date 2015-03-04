@@ -244,7 +244,12 @@ relocsym(LSym *s)
 					if(thechar == '6')
 						o = 0;
 				} else if(HEADTYPE == Hdarwin) {
-					if(rs->type != SHOSTOBJ)
+					// ld64 for arm64 has a bug where if the address pointed to by o exists in the
+					// symbol table (dynid >= 0), then it will add o twice into the relocated value.
+					// The workaround is that when the symbol exists in symbol table, always use
+					// extern version of UNSIGNED relocation.
+					// This bug is verified to exist on ld64 241.9 (Xcode 6.1).
+					if(rs->type != SHOSTOBJ && (thechar != '7' || (thechar == '7' && rs->dynid < 0)))
 						o += symaddr(rs);
 				} else {
 					diag("unhandled pcrel relocation for %s", headstring);

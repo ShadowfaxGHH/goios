@@ -156,7 +156,10 @@ machoreloc1(Reloc *r, vlong sectoff)
 
 	rs = r->xsym;
 
-	if(rs->type == SHOSTOBJ || r->type == R_CALLARM64 || r->type == R_ADDRARM64) {
+	// ld64 has a bug handling MACHO_ARM64_RELOC_UNSIGNED with !extern relocation.
+	// see cmd/ld/data.c for details. The workarond is that don't use !extern
+	// UNSIGNED relocation when the symbol rs exists in the symbol table (dynid>=0).
+	if(rs->type == SHOSTOBJ || r->type == R_CALLARM64 || r->type == R_ADDRARM64 || (r->type == R_ADDR && rs->dynid >= 0)) {
 		if(rs->dynid < 0) {
 			diag("reloc %d to non-macho symbol %s type=%d", r->type, rs->name, rs->type);
 			return -1;

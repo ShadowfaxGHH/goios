@@ -175,77 +175,74 @@ TEXT runtime·nanotime(SB),NOSPLIT,$32
 
 // Sigtramp's job is to call the actual signal handler.
 // It is called with the following arguments on the stack:
-//	 LR	"return address" - ignored
-//	 R0	actual handler
-//	 R1	siginfo style - ignored
-//	 R2	signal number
-//	 R3	siginfo
-//	 -4(FP)	context, beware that 0(FP) is the saved LR
+//	LR	"return address" - ignored
+//	R0	actual handler
+//	R1	siginfo style - ignored
+//	R2	signal number
+//	R3	siginfo
+//	R4	context
 TEXT runtime·sigtramp(SB),NOSPLIT,$0
-	MOV	$43, R0
-	MOVW	$SYS_exit, R16
+	// this might be called in external code context,
+	// where g is not set.
+	// first save R0, because runtime·load_g will clobber it
+	MOV	R0, -16(RSP)!	// note: stack must be 16-byte aligned
+	MOVB	runtime·iscgo(SB), R0
+	CMP	$0, R0
+	BEQ	2(PC)
+	BL	runtime·load_g(SB)
+
+	CMP	$0, g
+	BNE	cont
+	// fake function call stack frame for badsignal
+	// we only need to pass R2 (signal number), but
+	// badsignal will expect R2 at 8(RSP), so we also
+	// push R1 onto stack. turns out we do need R1
+	// to do sigreturn.
+	MOV	R1, -16(RSP)!
+	MOV	R2, 8(RSP)
+	MOV	$runtime·badsignal(SB), R26
+	BL	(R26)
+	MOV	0(RSP), R1	// saved infostype
+	ADD	$(16+16), RSP
+	MOV	R4, R0	// the ucontext
+	B	ret
+
+cont:
+	// Restore R0
+	MOV	(RSP)16!, R0
+
+	// NOTE: some Darwin/ARM kernels always use the main stack to run the
+	// signal handler. We need to switch to gsignal ourselves.
+	MOV	g_m(g), R11
+	MOV	m_gsignal(R11), R5
+	MOV	(g_stack+stack_hi)(R5), R6
+	SUB	$64, R6
+
+	// copy arguments for call to sighandler
+	MOV	R2, 8(R6)	// signal num
+	MOV	R3, 16(R6)	// signal info
+	MOV	R4, 24(R6)	// context
+	MOV	g, 32(R6)	// old_g
+
+	// Backup ucontext and infostyle
+	MOV	R4, 40(R6)
+	MOV	R1, 48(R6)
+
+	// switch stack and g
+	MOV	R6, RSP	// sigtramp can not re-entrant, so no need to back up RSP.
+	MOV	R5, g
+
+	BL	(R0)
+
+	// call sigreturn
+	MOV	40(RSP), R0	// saved ucontext
+	MOV	48(RSP), R1	// saved infostyle
+ret:
+	MOVW	$SYS_sigreturn, R16 // sigreturn(ucontext, infostyle)
 	SVC	$0x80
-	RETURN
-//	// this might be called in external code context,
-//	// where g is not set.
-//	// first save R0, because runtime·load_g will clobber it
-//	MOVM.DB.W [R0], (R13)
-//	MOVB	runtime·iscgo(SB), R0
-//	CMP	$0, R0
-//	BL.NE	runtime·load_g(SB)
-//
-//	CMP	$0, g
-//	BNE	cont
-//	// fake function call stack frame for badsignal
-//	// we only need to pass R2 (signal number), but
-//	// badsignal will expect R2 at 4(R13), so we also
-//	// push R1 onto stack. turns out we do need R1
-//	// to do sigreturn.
-//	MOVM.DB.W [R1,R2], (R13)
-//	MOVW	$runtime·badsignal(SB), R11
-//	BL	(R11)
-//	MOVM.IA.W [R1], (R13) // saved infostype
-//	ADD		$(4+4), R13 // +4: also need to remove the pushed R0.
-//	MOVW    -4(FP), R0 // load ucontext
-//	B	ret
-//
-//cont:
-//	// Restore R0
-//	MOVM.IA.W (R13), [R0]
-//
-//	// NOTE: some Darwin/ARM kernels always use the main stack to run the
-//	// signal handler. We need to switch to gsignal ourselves.
-//	MOVW	g_m(g), R11
-//	MOVW	m_gsignal(R11), R5
-//	MOVW	(g_stack+stack_hi)(R5), R6
-//	SUB		$28, R6
-//
-//	// copy arguments for call to sighandler
-//	MOVW	R2, 4(R6) // signal num
-//	MOVW	R3, 8(R6) // signal info
-//	MOVW	g, 16(R6) // old_g
-//	MOVW    -4(FP), R4
-//	MOVW	R4, 12(R6) // context
-//
-//	// Backup ucontext and infostyle
-//	MOVW    R4, 20(R6)
-//	MOVW    R1, 24(R6)
-//
-//	// switch stack and g
-//	MOVW	R6, R13 // sigtramp can not re-entrant, so no need to back up R13.
-//	MOVW	R5, g
-//
-//	BL	(R0)
-//
-//	// call sigreturn
-//	MOVW	20(R13), R0	// saved ucontext
-//	MOVW	24(R13), R1	// saved infostyle
-//ret:
-//	MOVW	$SYS_sigreturn, R16 // sigreturn(ucontext, infostyle)
-//	SVC	$0x80
-//
-//	// if sigreturn fails, we can do nothing but exit
-//	B	runtime·exit(SB)
+
+	// if sigreturn fails, we can do nothing but exit
+	B	runtime·exit(SB)
 
 TEXT runtime·sigprocmask(SB),NOSPLIT,$0
 	MOVW	sig+0(FP), R0
@@ -260,7 +257,7 @@ TEXT runtime·sigprocmask(SB),NOSPLIT,$0
 TEXT runtime·sigaction(SB),NOSPLIT,$0
 	MOVW	mode+0(FP), R0
 	MOV	new+8(FP), R1
-	MOV	8(FP), R2
+	MOV	old+16(FP), R2
 	MOVW	$SYS_sigaction, R16
 	SVC	$0x80
 	BCC	2(PC)

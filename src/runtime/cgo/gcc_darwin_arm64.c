@@ -32,7 +32,7 @@ inittls(void **tlsg, void **tlsbase)
 		fprintf(stderr, "runtime/cgo: pthread_key_create failed: %d\n", err);
 		abort();
 	}
-	fprintf(stderr, "runtime/cgo: k = %d, tlsbase = %p\n", (int)k, tlsbase); // debug
+	//fprintf(stderr, "runtime/cgo: k = %d, tlsbase = %p\n", (int)k, tlsbase); // debug
 	pthread_setspecific(k, (void*)magic);
 	// The first key should be at 257.
 	for (i=0; i<PTHREAD_KEYS_MAX; i++) {
@@ -58,6 +58,7 @@ _cgo_sys_thread_start(ThreadStart *ts)
 	size_t size;
 	int err;
 
+	//fprintf(stderr, "runtime/cgo: _cgo_sys_thread_start: fn=%p, g=%p\n", ts->fn, ts->g); // debug
 	sigfillset(&ign);
 	pthread_sigmask(SIG_SETMASK, &ign, &oset);
 
@@ -137,8 +138,7 @@ x_cgo_init(G *g, void (*setg)(void*), void **tlsg, void **tlsbase)
 	pthread_attr_t attr;
 	size_t size;
 
-fprintf(stderr, "x_cgo_init = %p\n", &x_cgo_init); // aid debugging in presence of ASLR
-
+	//fprintf(stderr, "x_cgo_init = %p\n", &x_cgo_init); // aid debugging in presence of ASLR
 	setg_gcc = setg;
 	pthread_attr_init(&attr);
 	pthread_attr_getstacksize(&attr, &size);
@@ -147,8 +147,6 @@ fprintf(stderr, "x_cgo_init = %p\n", &x_cgo_init); // aid debugging in presence 
 
 	// yes, tlsbase from mrs might not be correctly aligned.
 	inittls(tlsg, (void**)((uintptr)tlsbase & ~7));
-
-fprintf(stderr, "inittls ok, x_cgo_init done.\n");
 
 	// TODO(minux): disabled until upstream this.
 	return;

@@ -99,9 +99,6 @@ func mallocinit() {
 	// See https://code.google.com/p/go/issues/detail?id=5049
 	// TODO(rsc): Fix after 1.1.
 	limit = 0
-	if goos_darwin * goarch_arm64 == 1 {
-		limit = 1000<<20
-	}
 
 	// Set up the allocation arena, a contiguous area of memory where
 	// allocated data will be found.  The arena begins with a bitmap large
@@ -141,7 +138,12 @@ func mallocinit() {
 		spansSize = round(spansSize, _PageSize)
 		for i := 0; i <= 0x7f; i++ {
 			// TODO(dfc) see above
-			p = uintptr(i)<<40 | uintptrMask&(0x0040<<32)
+			if goos_darwin*goarch_arm64 == 1 {
+				// the darwin/arm64 address space is a bit small.
+				p = uintptr(i)<<40 | uintptrMask&(0x0013<<28)
+			} else {
+				p = uintptr(i)<<40 | uintptrMask&(0x0040<<32)
+			}
 			pSize = bitmapSize + spansSize + arenaSize + _PageSize
 			p = uintptr(sysReserve(unsafe.Pointer(p), pSize, &reserved))
 			if p != 0 {

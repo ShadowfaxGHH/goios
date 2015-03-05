@@ -200,11 +200,12 @@ TEXT runtime·sigtramp(SB),NOSPLIT,$0
 	// to do sigreturn.
 	MOV	R1, -16(RSP)!
 	MOV	R2, 8(RSP)
+	MOV	R4, 24(RSP)	// save ucontext, badsignal might clobber R4
 	MOV	$runtime·badsignal(SB), R26
 	BL	(R26)
 	MOV	0(RSP), R1	// saved infostype
+	MOV	24(RSP), R0	// the ucontext
 	ADD	$(16+16), RSP
-	MOV	R4, R0	// the ucontext
 	B	ret
 
 cont:

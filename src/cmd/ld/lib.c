@@ -1392,6 +1392,7 @@ genasmsym(void (*put)(LSym*, char*, int, vlong, vlong, int, LSym*))
 		case STYPE:
 		case SSTRING:
 		case SGOSTRING:
+		case SGOFUNC:
 		case SWINDOWS:
 			if(!s->reachable)
 				continue;

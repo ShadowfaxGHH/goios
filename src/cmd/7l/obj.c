@@ -53,6 +53,10 @@ archinit(void)
 	if(linkmode == LinkAuto && strcmp(getgoextlinkenabled(), "0") == 0)
 		linkmode = LinkInternal;
 
+	// Darwin/arm64 only supports external linking.
+	if(HEADTYPE == Hdarwin)
+		linkmode = LinkExternal;
+
 	switch(HEADTYPE) {
 	default:
 		if(linkmode == LinkAuto)

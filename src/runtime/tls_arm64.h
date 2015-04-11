@@ -7,6 +7,12 @@
 #define MRS_TPIDR_R0 WORD $0xd53bd040
 #endif
 
+#ifdef GOOS_darwin
+#define TPIDR TPIDRRO_EL0
+#define TLSG_IS_VARIABLE
+#define MRS_TPIDR_R0 WORD $0xd53bd060
+#endif
+
 // Define something that will break the build if
 // the GOOS is unknown.
 #ifndef TPIDR

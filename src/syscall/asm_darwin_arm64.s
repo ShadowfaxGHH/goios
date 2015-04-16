@@ -19,16 +19,14 @@ TEXT	·Syscall(SB),NOSPLIT,$0-56
 	BCC	ok
 	MOVD	$-1, R1
 	MOVD	R1, r1+32(FP)	// r1
-	MOVD	$0, R2
-	MOVD	R2, r2+40(FP)	// r2
+	MOVD	ZR, r2+40(FP)	// r2
 	MOVD	R0, errno+48(FP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
 ok:
 	MOVD	R0, r1+32(FP) // r1
 	MOVD	R1, r2+40(FP)	// r2
-	MOVD	$0, R0
-	MOVD	R0, errno+48(FP)	// errno
+	MOVD	ZR, errno+48(FP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
 
@@ -42,15 +40,13 @@ TEXT ·RawSyscall(SB),NOSPLIT,$0-56
 	BCC	ok
 	MOVD	$-1, R1
 	MOVD	R1, r1+32(FP)	// r1
-	MOVD	$0, R2
-	MOVD	R2, r2+40(FP)	// r2
+	MOVD	ZR, r2+40(FP)	// r2
 	MOVD	R0, errno+48(FP)	// errno
 	RET
 ok:
 	MOVD	R0, r1+32(FP) // r1
 	MOVD	R1, r2+40(FP)	// r2
-	MOVD	$0, R0
-	MOVD	R0, errno+48(FP)	// errno
+	MOVD	ZR, errno+48(FP)	// errno
 	RET
 
 // func Syscall6(trap uintptr, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, err uintptr)
@@ -67,16 +63,14 @@ TEXT	·Syscall6(SB),NOSPLIT,$0-80
 	BCC	ok
 	MOVD	$-1, R1
 	MOVD	R1, r1+56(FP)	// r1
-	MOVD	$0, R2
-	MOVD	R2, r2+64(FP)	// r2
+	MOVD	ZR, r2+64(FP)	// r2
 	MOVD	R0, errno+72(FP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
 ok:
 	MOVD	R0, r1+56(FP) // r1
 	MOVD	R1, r2+64(FP)	// r2
-	MOVD	$0, R0
-	MOVD	R0, errno+72(FP)	// errno
+	MOVD	ZR, errno+72(FP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
 
@@ -93,14 +87,13 @@ TEXT	·RawSyscall6(SB),NOSPLIT,$0-80
 	BCC	ok
 	MOVD	$-1, R1
 	MOVD	R1, r1+56(FP)	// r1
-	MOVD	$0, R2
-	MOVD	R2, r2+64(FP)	// r2
+	MOVD	ZR, r2+64(FP)	// r2
 	MOVD	R0, errno+72(FP)	// errno
 	RET
 ok:
 	MOVD	R0, r1+56(FP) // r1
 	MOVD	R1, r2+64(FP)	// r2
-	MOVD	$0, R0
+	MOVD	ZR, R0
 	MOVD	R0, errno+72(FP)	// errno
 	RET
 
@@ -121,16 +114,14 @@ TEXT	·Syscall9(SB),NOSPLIT,$0-104
 	BCC	ok
 	MOVD	$-1, R1
 	MOVD	R1, r1+80(FP)	// r1
-	MOVD	$0, R2
-	MOVD	R2, r2+88(FP)	// r2
+	MOVD	ZR, r2+88(FP)	// r2
 	MOVD	R0, errno+96(FP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
 ok:
 	MOVD	R0, r1+80(FP) // r1
 	MOVD	R1, r2+88(FP)	// r2
-	MOVD	$0, R0
-	MOVD	R0, errno+96(FP)	// errno
+	MOVD	ZR, errno+96(FP)	// errno
 	BL	runtime·exitsyscall(SB)
 	RET
 

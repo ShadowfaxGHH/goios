@@ -52,7 +52,7 @@ TEXT runtime·open(SB),NOSPLIT,$0
 	MOVW	R0, ret+16(FP)
 	RET
 
-TEXT runtime·close(SB),NOSPLIT,$0
+TEXT runtime·closefd(SB),NOSPLIT,$0
 	MOVW	fd+0(FP), R0
 	MOVW	$SYS_close, R16
 	SVC	$0x80

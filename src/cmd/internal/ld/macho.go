@@ -358,8 +358,8 @@ func machoshbits(mseg *MachoSeg, sect *Section, segname string) {
 
 	var msect *MachoSect
 	if Thearch.Thechar == '7' && sect.Rwx&1 == 0 {
-		// darwin/arm64 forbits abs relocs in __TEXT, so if the
-		// section is not executable, put it in __DATA segment.
+		// darwin/arm64 forbids absolute relocs in __TEXT, so if
+		// the section is not executable, put it in __DATA segment.
 		msect = newMachoSect(mseg, buf, "__DATA")
 	} else {
 		msect = newMachoSect(mseg, buf, segname)

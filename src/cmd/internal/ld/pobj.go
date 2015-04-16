@@ -112,9 +112,10 @@ func Ldmain() {
 	obj.Flagstr("installsuffix", "suffix: pkg directory suffix", &flag_installsuffix)
 	obj.Flagstr("k", "sym: set field tracking symbol", &tracksym)
 	obj.Flagfn1("linkmode", "mode: set link mode (internal, external, auto)", setlinkmode)
+	flag.BoolVar(&Linkshared, "linkshared", false, "link against installed Go shared libraries")
 	obj.Flagcount("n", "dump symbol table", &Debug['n'])
 	obj.Flagstr("o", "outfile: set output file", &outfile)
-	obj.Flagstr("r", "dir1:dir2:...: set ELF dynamic linker search path", &rpath)
+	flag.Var(&rpath, "r", "dir1:dir2:...: set ELF dynamic linker search path")
 	obj.Flagcount("race", "enable race detector", &flag_race)
 	obj.Flagcount("s", "disable symbol table", &Debug['s'])
 	var flagShared int
@@ -176,6 +177,11 @@ func Ldmain() {
 
 	Thearch.Archinit()
 
+	if Linkshared && !Iself {
+		Diag("-linkshared can only be used on elf systems")
+		Errorexit()
+	}
+
 	if Debug['v'] != 0 {
 		fmt.Fprintf(&Bso, "HEADER = -H%d -T0x%x -D0x%x -R0x%x\n", HEADTYPE, uint64(INITTEXT), uint64(INITDAT), uint32(INITRND))
 	}
@@ -191,10 +197,10 @@ func Ldmain() {
 			} else {
 				pkgpath, file = parts[0], parts[1]
 			}
-			addlibpath(Ctxt, "command line", "command line", file, pkgpath)
+			addlibpath(Ctxt, "command line", "command line", file, pkgpath, "")
 		}
 	} else {
-		addlibpath(Ctxt, "command line", "command line", flag.Arg(0), "main")
+		addlibpath(Ctxt, "command line", "command line", flag.Arg(0), "main", "")
 	}
 	loadlib()
 
@@ -231,6 +237,7 @@ func Ldmain() {
 	Thearch.Asmb()
 	undef()
 	hostlink()
+	archive()
 	if Debug['v'] != 0 {
 		fmt.Fprintf(&Bso, "%5.2f cpu time\n", obj.Cputime())
 		fmt.Fprintf(&Bso, "%d symbols\n", Ctxt.Nsymbol)

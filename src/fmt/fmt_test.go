@@ -9,6 +9,7 @@ import (
 	. "fmt"
 	"io"
 	"math"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -394,6 +395,8 @@ var fmtTests = []struct {
 	{"%v", &slice, "&[1 2 3 4 5]"},
 	{"%v", &islice, "&[1 hello 2.5 <nil>]"},
 	{"%v", &bslice, "&[1 2 3 4 5]"},
+	{"%v", []byte{1}, "[1]"},
+	{"%v", []byte{}, "[]"},
 
 	// complexes with %v
 	{"%v", 1 + 2i, "(1+2i)"},
@@ -447,6 +450,12 @@ var fmtTests = []struct {
 	{"%d", []int{1, 2, 15}, `[1 2 15]`},
 	{"%d", []byte{1, 2, 15}, `[1 2 15]`},
 	{"%q", []string{"a", "b"}, `["a" "b"]`},
+	{"% 02x", []byte{1}, "01"},
+	{"% 02x", []byte{1, 2, 3}, "01 02 03"},
+	// Special care for empty slices.
+	{"%x", []byte{}, ""},
+	{"%02x", []byte{}, ""},
+	{"% 02x", []byte{}, ""},
 
 	// renamings
 	{"%v", renamedBool(true), "true"},
@@ -671,6 +680,12 @@ var fmtTests = []struct {
 	{"%x", byteFormatterSlice, "61626364"},
 	// This next case seems wrong, but the docs say the Formatter wins here.
 	{"%#v", byteFormatterSlice, "[]fmt_test.byteFormatter{X, X, X, X}"},
+
+	// reflect.Value handled specially in Go 1.5, making it possible to
+	// see inside non-exported fields (which cannot be accessed with Interface()).
+	// Issue 8965.
+	{"%v", reflect.ValueOf(A{}).Field(0).String(), "<int Value>"}, // Equivalent to the old way.
+	{"%v", reflect.ValueOf(A{}).Field(0), "0"},                    // Sees inside the field.
 }
 
 // zeroFill generates zero-filled strings of the specified width. The length

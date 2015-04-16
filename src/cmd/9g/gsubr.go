@@ -526,7 +526,7 @@ func intLiteral(n *gc.Node) (x int64, ok bool) {
 	case gc.CTINT, gc.CTRUNE:
 		return gc.Mpgetfix(n.Val.U.Xval), true
 	case gc.CTBOOL:
-		return int64(n.Val.U.Bval), true
+		return int64(bool2int(n.Val.U.Bval)), true
 	}
 	return
 }
@@ -645,7 +645,7 @@ func fixlargeoffset(n *gc.Node) {
 	if n.Op != gc.OINDREG {
 		return
 	}
-	if n.Val.U.Reg == ppc64.REGSP { // stack offset cannot be large
+	if n.Reg == ppc64.REGSP { // stack offset cannot be large
 		return
 	}
 	if n.Xoffset != int64(int32(n.Xoffset)) {

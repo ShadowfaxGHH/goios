@@ -474,8 +474,11 @@ func loadcgo(file string, pkg string, p string) {
 			local = expandpkg(local, pkg)
 			s = Linklookup(Ctxt, local, 0)
 
-			if Buildmode == BuildmodeCShared && s == Linklookup(Ctxt, "main", 0) {
-				continue
+			switch Buildmode {
+			case BuildmodeCShared, BuildmodeCArchive:
+				if s == Linklookup(Ctxt, "main", 0) {
+					continue
+				}
 			}
 
 			// export overrides import, for openbsd/cgo.
@@ -619,7 +622,7 @@ func deadcode() {
 		fmt.Fprintf(&Bso, "%5.2f deadcode\n", obj.Cputime())
 	}
 
-	if Buildmode == BuildmodeShared {
+	if Buildmode == BuildmodeShared || Buildmode == BuildmodeCArchive {
 		// Mark all symbols as reachable when building a
 		// shared library.
 		for s := Ctxt.Allsym; s != nil; s = s.Allsym {
@@ -631,6 +634,10 @@ func deadcode() {
 		mark(Linkrlookup(Ctxt, "main.init", 0))
 	} else {
 		mark(Linklookup(Ctxt, INITENTRY, 0))
+		if Linkshared && Buildmode == BuildmodeExe {
+			mark(Linkrlookup(Ctxt, "main.main", 0))
+			mark(Linkrlookup(Ctxt, "main.init", 0))
+		}
 		for i := 0; i < len(markextra); i++ {
 			mark(Linklookup(Ctxt, markextra[i], 0))
 		}

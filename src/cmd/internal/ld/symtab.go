@@ -104,6 +104,9 @@ func putelfsym(x *LSym, s string, t int, addr int64, size int64, ver int, go_ *L
 
 	case 'U':
 		type_ = STT_NOTYPE
+		if x == Ctxt.Tlsg {
+			type_ = STT_TLS
+		}
 
 	case 't':
 		type_ = STT_TLS
@@ -367,9 +370,18 @@ func symtab() {
 	// just defined above will be first.
 	// hide the specific symbols.
 	for s := Ctxt.Allsym; s != nil; s = s.Allsym {
-		if !s.Reachable || s.Special != 0 || s.Type != SRODATA {
+		if !s.Reachable || s.Special != 0 {
 			continue
 		}
+
+		if strings.Contains(s.Name, "..gostring.") || strings.Contains(s.Name, "..gobytes.") {
+			s.Local = true
+		}
+
+		if s.Type != SRODATA {
+			continue
+		}
+
 		if strings.HasPrefix(s.Name, "type.") && !DynlinkingGo() {
 			s.Type = STYPE
 			s.Hide = 1
@@ -452,4 +464,11 @@ func symtab() {
 	// The rest of moduledata is zero initialized.
 	moduledata.Size = moduledatasize
 	Symgrow(Ctxt, moduledata, moduledatasize)
+
+	lastmoduledatap := Linklookup(Ctxt, "runtime.lastmoduledatap", 0)
+	if lastmoduledatap.Type != SDYNIMPORT {
+		lastmoduledatap.Type = SNOPTRDATA
+		lastmoduledatap.Size = 0 // overwrite existing value
+		Addaddr(Ctxt, lastmoduledatap, moduledata)
+	}
 }

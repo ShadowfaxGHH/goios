@@ -76,7 +76,10 @@ and test commands:
 		print the commands.
 
 	-buildmode mode
-		build mode to use. See 'go help buildmodes' for more.
+		build mode to use. See 'go help buildmode' for more.
+	-linkshared
+		link against shared libraries previously created with
+		-buildmode=shared
 	-compiler name
 		name of compiler to use, as in runtime.Compiler (gccgo or gc).
 	-gccgoflags 'arg list'
@@ -124,12 +127,15 @@ func init() {
 	addBuildFlags(cmdBuild)
 	addBuildFlags(cmdInstall)
 
-	if buildContext.GOOS == "darwin" && buildContext.GOARCH == "arm" {
-		// darwin/arm cannot run multiple tests simultaneously.
-		// Parallelism is limited in go_darwin_arm_exec, but
-		// also needs to be limited here so go test std does not
-		// timeout tests that waiting to run.
-		buildP = 1
+	if buildContext.GOOS == "darwin" {
+		switch buildContext.GOARCH {
+		case "arm", "arm64":
+			// darwin/arm cannot run multiple tests simultaneously.
+			// Parallelism is limited in go_darwin_arm_exec, but
+			// also needs to be limited here so go test std does not
+			// timeout tests that waiting to run.
+			buildP = 1
+		}
 	}
 }
 
@@ -149,6 +155,7 @@ var buildGccgoflags []string // -gccgoflags flag
 var buildRace bool           // -race flag
 var buildToolExec []string   // -toolexec flag
 var buildBuildmode string    // -buildmode flag
+var buildLinkshared bool     // -linkshared flag
 
 var buildContext = build.Default
 var buildToolchain toolchain = noToolchain{}
@@ -204,6 +211,7 @@ func addBuildFlags(cmd *Command) {
 	cmd.Flag.BoolVar(&buildRace, "race", false, "")
 	cmd.Flag.Var((*stringsFlag)(&buildToolExec), "toolexec", "")
 	cmd.Flag.StringVar(&buildBuildmode, "buildmode", "default", "")
+	cmd.Flag.BoolVar(&buildLinkshared, "linkshared", false, "")
 }
 
 func addBuildFlagsNX(cmd *Command) {
@@ -278,34 +286,81 @@ func (v *stringsFlag) String() string {
 	return "<stringsFlag>"
 }
 
-var pkgFilter = func(p *Package) bool { return true }
+func pkgsMain(pkgs []*Package) (res []*Package) {
+	for _, p := range pkgs {
+		if p.Name == "main" {
+			res = append(res, p)
+		}
+	}
+	return res
+}
+
+func pkgsNotMain(pkgs []*Package) (res []*Package) {
+	for _, p := range pkgs {
+		if p.Name != "main" {
+			res = append(res, p)
+		}
+	}
+	return res
+}
+
+var pkgsFilter = func(pkgs []*Package) []*Package { return pkgs }
 
 func buildModeInit() {
 	var codegenArg, ldBuildmode string
+	platform := goos + "/" + goarch
 	switch buildBuildmode {
 	case "archive":
-		pkgFilter = func(p *Package) bool { return p.Name != "main" }
+		pkgsFilter = pkgsNotMain
+	case "c-archive":
+		pkgsFilter = func(p []*Package) []*Package {
+			if len(p) != 1 || p[0].Name != "main" {
+				fatalf("-buildmode=c-archive requires exactly one main package")
+			}
+			return p
+		}
+		exeSuffix = ".a"
+		ldBuildmode = "c-archive"
 	case "c-shared":
-		pkgFilter = func(p *Package) bool { return p.Name == "main" }
-		platform := goos + "/" + goarch
+		pkgsFilter = pkgsMain
 		switch platform {
 		case "linux/amd64":
+			codegenArg = "-shared"
+		case "linux/arm":
+			buildAsmflags = append(buildAsmflags, "-shared")
 		case "android/arm":
 		default:
-			fmt.Fprintf(os.Stderr, "go %s: -buildmode=c-shared not supported on %s\n", platform)
-			os.Exit(2)
-		}
-		if goarch == "amd64" {
-			codegenArg = "-shared"
+			fatalf("-buildmode=c-shared not supported on %s\n", platform)
 		}
 		ldBuildmode = "c-shared"
 	case "default":
 		ldBuildmode = "exe"
 	case "exe":
-		pkgFilter = func(p *Package) bool { return p.Name == "main" }
+		pkgsFilter = pkgsMain
 		ldBuildmode = "exe"
+	case "shared":
+		pkgsFilter = pkgsNotMain
+		switch platform {
+		case "linux/amd64":
+		default:
+			fatalf("-buildmode=shared not supported on %s\n", platform)
+		}
+		if *buildO != "" {
+			fatalf("-buildmode=shared and -o not supported together")
+		}
+		codegenArg = "-dynlink"
+		ldBuildmode = "shared"
 	default:
 		fatalf("buildmode=%s not supported", buildBuildmode)
+	}
+	if buildLinkshared {
+		if platform != "linux/amd64" {
+			fmt.Fprintf(os.Stderr, "go %s: -linkshared is only supported on linux/amd64\n", flag.Args()[0])
+			os.Exit(2)
+		}
+		codegenArg = "-dynlink"
+		// TODO(mwhudson): remove -w when that gets fixed in linker.
+		buildLdflags = append(buildLdflags, "-linkshared", "-w")
 	}
 	if ldBuildmode != "" {
 		buildLdflags = append(buildLdflags, "-buildmode="+ldBuildmode)
@@ -349,6 +404,7 @@ func runBuild(cmd *Command, args []string) {
 	}
 
 	depMode := modeBuild
+	mode := modeBuild
 	if buildI {
 		depMode = modeInstall
 	}
@@ -367,11 +423,15 @@ func runBuild(cmd *Command, args []string) {
 		return
 	}
 
-	a := &action{}
-	for _, p := range packages(args) {
-		if pkgFilter(p) {
-			a.deps = append(a.deps, b.action(modeBuild, depMode, p))
-		}
+	var a *action
+	if buildBuildmode == "shared" {
+		a = b.libaction(libname(args))
+		mode = depMode
+	} else {
+		a = &action{}
+	}
+	for _, p := range pkgsFilter(packages(args)) {
+		a.deps = append(a.deps, b.action(mode, depMode, p))
 	}
 	b.do(a)
 }
@@ -390,9 +450,34 @@ See also: go build, go get, go clean.
 	`,
 }
 
+// libname returns the filename to use for the shared library when using
+// -buildmode=shared.  The rules we use are:
+//  1) Drop any trailing "/..."s if present
+//  2) Change / to -
+//  3) Join arguments with ,
+// So std -> libstd.so
+//    a b/... -> liba,b.so
+//    gopkg.in/tomb.v2 -> libgopkg.in-tomb.v2.so
+func libname(args []string) string {
+	var libname string
+	for _, arg := range args {
+		arg = strings.TrimSuffix(arg, "/...")
+		arg = strings.Replace(arg, "/", "-", -1)
+		if libname == "" {
+			libname = arg
+		} else {
+			libname += "," + arg
+		}
+	}
+	// TODO(mwhudson): Needs to change for platforms that use different naming
+	// conventions...
+	return "lib" + libname + ".so"
+}
+
 func runInstall(cmd *Command, args []string) {
 	raceInit()
-	pkgs := packagesForBuild(args)
+	buildModeInit()
+	pkgs := pkgsFilter(packagesForBuild(args))
 
 	for _, p := range pkgs {
 		if p.Target == "" && (!p.Standard || p.ImportPath != "unsafe") {
@@ -410,28 +495,54 @@ func runInstall(cmd *Command, args []string) {
 	var b builder
 	b.init()
 	a := &action{}
-	var tools []*action
-	for _, p := range pkgs {
-		if !pkgFilter(p) {
-			continue
+	if buildBuildmode == "shared" {
+		var libdir string
+		for _, p := range pkgs {
+			plibdir := p.build.PkgTargetRoot
+			if libdir == "" {
+				libdir = plibdir
+			} else if libdir != plibdir {
+				fatalf("multiple roots %s & %s", libdir, plibdir)
+			}
 		}
-		// If p is a tool, delay the installation until the end of the build.
-		// This avoids installing assemblers/compilers that are being executed
-		// by other steps in the build.
-		// cmd/cgo is handled specially in b.action, so that we can
-		// both build and use it in the same 'go install'.
-		action := b.action(modeInstall, modeInstall, p)
-		if goTools[p.ImportPath] == toTool && p.ImportPath != "cmd/cgo" {
-			a.deps = append(a.deps, action.deps...)
-			action.deps = append(action.deps, a)
-			tools = append(tools, action)
-			continue
+
+		a.f = (*builder).install
+		libfilename := libname(args)
+		linkSharedAction := b.libaction(libfilename)
+		a.target = filepath.Join(libdir, libfilename)
+		a.deps = append(a.deps, linkSharedAction)
+		for _, p := range pkgs {
+			if p.target == "" {
+				continue
+			}
+			shlibnameaction := &action{}
+			shlibnameaction.f = (*builder).installShlibname
+			shlibnameaction.target = p.target[:len(p.target)-2] + ".shlibname"
+			a.deps = append(a.deps, shlibnameaction)
+			shlibnameaction.deps = append(shlibnameaction.deps, linkSharedAction)
+			linkSharedAction.deps = append(linkSharedAction.deps, b.action(modeInstall, modeInstall, p))
 		}
-		a.deps = append(a.deps, action)
-	}
-	if len(tools) > 0 {
-		a = &action{
-			deps: tools,
+	} else {
+		var tools []*action
+		for _, p := range pkgs {
+			// If p is a tool, delay the installation until the end of the build.
+			// This avoids installing assemblers/compilers that are being executed
+			// by other steps in the build.
+			// cmd/cgo is handled specially in b.action, so that we can
+			// both build and use it in the same 'go install'.
+			action := b.action(modeInstall, modeInstall, p)
+			if goTools[p.ImportPath] == toTool && p.ImportPath != "cmd/cgo" {
+				a.deps = append(a.deps, action.deps...)
+				action.deps = append(action.deps, a)
+				tools = append(tools, action)
+				continue
+			}
+			a.deps = append(a.deps, action)
+		}
+		if len(tools) > 0 {
+			a = &action{
+				deps: tools,
+			}
 		}
 	}
 	b.do(a)
@@ -727,6 +838,13 @@ func (b *builder) action(mode buildMode, depMode buildMode, p *Package) *action 
 		}
 	}
 
+	return a
+}
+
+func (b *builder) libaction(libname string) *action {
+	a := &action{}
+	a.f = (*builder).linkShared
+	a.target = filepath.Join(b.work, libname)
 	return a
 }
 
@@ -1149,6 +1267,34 @@ func (b *builder) getPkgConfigFlags(p *Package) (cflags, ldflags []string, err e
 	return
 }
 
+func (b *builder) installShlibname(a *action) error {
+	a1 := a.deps[0]
+	err := ioutil.WriteFile(a.target, []byte(filepath.Base(a1.target)+"\n"), 0644)
+	if err != nil {
+		return err
+	}
+	if buildX {
+		b.showcmd("", "echo '%s' > %s # internal", filepath.Base(a1.target), a.target)
+	}
+	return nil
+}
+
+func (b *builder) linkShared(a *action) (err error) {
+	// TODO(mwhudson): obvious copy pasting from gcToolchain.ld, should make a few
+	// changes to that function and then call it. And support gccgo.
+	allactions := actionList(a)
+	importArgs := b.includeArgs("-L", allactions[:len(allactions)-1])
+	// TODO(mwhudson): this does not check for cxx-ness, extldflags etc
+	ldflags := []string{"-installsuffix", buildContext.InstallSuffix}
+	ldflags = append(ldflags, buildLdflags...)
+	for _, d := range a.deps {
+		if d.target != "" { // omit unsafe etc
+			ldflags = append(ldflags, d.p.ImportPath+"="+d.target)
+		}
+	}
+	return b.run(".", a.target, nil, buildToolExec, tool(archChar()+"l"), "-o", a.target, importArgs, ldflags)
+}
+
 // install is the action for installing a single package or executable.
 func (b *builder) install(a *action) (err error) {
 	defer func() {
@@ -1210,15 +1356,7 @@ func (b *builder) includeArgs(flag string, all []*action) []string {
 	for _, a1 := range all {
 		if dir := a1.pkgdir; dir == a1.p.build.PkgRoot && !incMap[dir] {
 			incMap[dir] = true
-			if _, ok := buildToolchain.(gccgoToolchain); ok {
-				dir = filepath.Join(dir, "gccgo_"+goos+"_"+goarch)
-			} else {
-				dir = filepath.Join(dir, goos+"_"+goarch)
-				if buildContext.InstallSuffix != "" {
-					dir += "_" + buildContext.InstallSuffix
-				}
-			}
-			inc = append(inc, flag, dir)
+			inc = append(inc, flag, a1.p.build.PkgTargetRoot)
 		}
 	}
 

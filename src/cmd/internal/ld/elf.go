@@ -1658,7 +1658,15 @@ func doelf() {
 		Addstring(shstrtab, ".note.GNU-stack")
 	}
 
-	if Buildmode == BuildmodeCShared || DynlinkingGo() {
+	hasinitarr := Linkshared
+
+	/* shared library initializer */
+	switch Buildmode {
+	case BuildmodeCArchive, BuildmodeCShared, BuildmodeShared:
+		hasinitarr = true
+	}
+
+	if hasinitarr {
 		Addstring(shstrtab, ".init_array")
 		switch Thearch.Thechar {
 		case '6', '7', '9':
@@ -1816,8 +1824,8 @@ func doelf() {
 			Elfwritedynent(s, DT_RELENT, ELF32RELSIZE)
 		}
 
-		if rpath != "" {
-			Elfwritedynent(s, DT_RUNPATH, uint64(Addstring(dynstr, rpath)))
+		if rpath.val != "" {
+			Elfwritedynent(s, DT_RUNPATH, uint64(Addstring(dynstr, rpath.val)))
 		}
 
 		if Thearch.Thechar == '9' {

@@ -33,13 +33,14 @@ package ld
 import (
 	"bytes"
 	"cmd/internal/obj"
-	"errors"
+	"debug/elf"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -107,12 +108,27 @@ type Arch struct {
 	Vput             func(uint64)
 }
 
+type Rpath struct {
+	set bool
+	val string
+}
+
+func (r *Rpath) Set(val string) error {
+	r.set = true
+	r.val = val
+	return nil
+}
+
+func (r *Rpath) String() string {
+	return r.val
+}
+
 var (
 	Thearch Arch
 	datap   *LSym
 	Debug   [128]int
 	Lcsize  int32
-	rpath   string
+	rpath   Rpath
 	Spsize  int32
 	Symsize int32
 )
@@ -153,9 +169,7 @@ type Section struct {
 // DynlinkingGo returns whether we are producing Go code that can live
 // in separate shared libraries linked together at runtime.
 func DynlinkingGo() bool {
-	// TODO(mwhudson): This is a bit silly for now, but it will need to have
-	// "|| Linkshared" appended when a subsequent change adds that flag.
-	return Buildmode == BuildmodeShared
+	return Buildmode == BuildmodeShared || Linkshared
 }
 
 var (
@@ -171,6 +185,7 @@ var (
 	flag_installsuffix string
 	flag_race          int
 	Buildmode          BuildMode
+	Linkshared         bool
 	tracksym           string
 	interpreter        string
 	tmpdir             string
@@ -256,27 +271,35 @@ type BuildMode uint8
 
 const (
 	BuildmodeExe BuildMode = iota
+	BuildmodeCArchive
 	BuildmodeCShared
 	BuildmodeShared
 )
 
 func (mode *BuildMode) Set(s string) error {
+	goos := obj.Getgoos()
+	goarch := obj.Getgoarch()
+	badmode := func() error {
+		return fmt.Errorf("buildmode %s not supported on %s/%s", s, goos, goarch)
+	}
 	switch s {
 	default:
-		return errors.New("invalid mode")
+		return fmt.Errorf("invalid buildmode: %q", s)
 	case "exe":
 		*mode = BuildmodeExe
+	case "c-archive":
+		if goos != "darwin" {
+			return badmode()
+		}
+		*mode = BuildmodeCArchive
 	case "c-shared":
-		goarch := obj.Getgoarch()
 		if goarch != "amd64" && goarch != "arm" {
-			return fmt.Errorf("not supported on %s", goarch)
+			return badmode()
 		}
 		*mode = BuildmodeCShared
 	case "shared":
-		goos := obj.Getgoos()
-		goarch := obj.Getgoarch()
 		if goos != "linux" || goarch != "amd64" {
-			return fmt.Errorf("not supported on %s/%s", goos, goarch)
+			return badmode()
 		}
 		*mode = BuildmodeShared
 	}
@@ -287,6 +310,8 @@ func (mode *BuildMode) String() string {
 	switch *mode {
 	case BuildmodeExe:
 		return "exe"
+	case BuildmodeCArchive:
+		return "c-archive"
 	case BuildmodeCShared:
 		return "c-shared"
 	case BuildmodeShared:
@@ -338,7 +363,7 @@ func libinit() {
 
 	if INITENTRY == "" {
 		switch Buildmode {
-		case BuildmodeCShared:
+		case BuildmodeCShared, BuildmodeCArchive:
 			INITENTRY = fmt.Sprintf("_rt0_%s_%s_lib", goarch, goos)
 		case BuildmodeExe:
 			INITENTRY = fmt.Sprintf("_rt0_%s_%s", goarch, goos)
@@ -371,16 +396,25 @@ func Errorexit() {
 }
 
 func loadinternal(name string) {
-	var pname string
-
 	found := 0
 	for i := 0; i < len(Ctxt.Libdir); i++ {
-		pname = fmt.Sprintf("%s/%s.a", Ctxt.Libdir[i], name)
+		if Linkshared {
+			shlibname := fmt.Sprintf("%s/%s.shlibname", Ctxt.Libdir[i], name)
+			if Debug['v'] != 0 {
+				fmt.Fprintf(&Bso, "searching for %s.a in %s\n", name, shlibname)
+			}
+			if obj.Access(shlibname, obj.AEXIST) >= 0 {
+				addlibpath(Ctxt, "internal", "internal", "", name, shlibname)
+				found = 1
+				break
+			}
+		}
+		pname := fmt.Sprintf("%s/%s.a", Ctxt.Libdir[i], name)
 		if Debug['v'] != 0 {
 			fmt.Fprintf(&Bso, "searching for %s.a in %s\n", name, pname)
 		}
 		if obj.Access(pname, obj.AEXIST) >= 0 {
-			addlibpath(Ctxt, "internal", "internal", pname, name)
+			addlibpath(Ctxt, "internal", "internal", pname, name, "")
 			found = 1
 			break
 		}
@@ -392,8 +426,13 @@ func loadinternal(name string) {
 }
 
 func loadlib() {
-	if Buildmode == BuildmodeCShared {
+	switch Buildmode {
+	case BuildmodeCShared:
 		s := Linklookup(Ctxt, "runtime.islibrary", 0)
+		s.Dupok = 1
+		Adduint8(Ctxt, s, 1)
+	case BuildmodeCArchive:
+		s := Linklookup(Ctxt, "runtime.isarchive", 0)
 		s.Dupok = 1
 		Adduint8(Ctxt, s, 1)
 	}
@@ -412,7 +451,11 @@ func loadlib() {
 			fmt.Fprintf(&Bso, "%5.2f autolib: %s (from %s)\n", obj.Cputime(), Ctxt.Library[i].File, Ctxt.Library[i].Objref)
 		}
 		iscgo = iscgo || Ctxt.Library[i].Pkg == "runtime/cgo"
-		objfile(Ctxt.Library[i].File, Ctxt.Library[i].Pkg)
+		if Ctxt.Library[i].Shlib != "" {
+			ldshlibsyms(Ctxt.Library[i].Shlib)
+		} else {
+			objfile(Ctxt.Library[i].File, Ctxt.Library[i].Pkg)
+		}
 	}
 
 	if Linkmode == LinkAuto {
@@ -451,7 +494,11 @@ func loadlib() {
 		loadinternal("runtime/cgo")
 
 		if i < len(Ctxt.Library) {
-			objfile(Ctxt.Library[i].File, Ctxt.Library[i].Pkg)
+			if Ctxt.Library[i].Shlib != "" {
+				ldshlibsyms(Ctxt.Library[i].Shlib)
+			} else {
+				objfile(Ctxt.Library[i].File, Ctxt.Library[i].Pkg)
+			}
 		}
 	}
 
@@ -482,7 +529,7 @@ func loadlib() {
 	// TODO(crawshaw): android should require leaving the tlsg->type
 	// alone (as the runtime-provided SNOPTRBSS) just like darwin/arm.
 	// But some other part of the linker is expecting STLSBSS.
-	if goos != "darwin" || Thearch.Thechar != '5' {
+	if tlsg.Type != SDYNIMPORT && (goos != "darwin" || Thearch.Thechar != '5') {
 		tlsg.Type = STLSBSS
 	}
 	tlsg.Size = int64(Thearch.Ptrsize)
@@ -764,14 +811,79 @@ func hostlinksetup() {
 	coutbuf = *Binitw(cout)
 }
 
+// hostobjCopy creates a copy of the object files in hostobj in a
+// temporary directory.
+func hostobjCopy() (paths []string) {
+	for i, h := range hostobj {
+		f, err := os.Open(h.file)
+		if err != nil {
+			Ctxt.Cursym = nil
+			Diag("cannot reopen %s: %v", h.pn, err)
+			Errorexit()
+		}
+		if _, err := f.Seek(h.off, 0); err != nil {
+			Ctxt.Cursym = nil
+			Diag("cannot seek %s: %v", h.pn, err)
+			Errorexit()
+		}
+
+		p := fmt.Sprintf("%s/%06d.o", tmpdir, i)
+		paths = append(paths, p)
+		w, err := os.Create(p)
+		if err != nil {
+			Ctxt.Cursym = nil
+			Diag("cannot create %s: %v", p, err)
+			Errorexit()
+		}
+		if _, err := io.CopyN(w, f, h.length); err != nil {
+			Ctxt.Cursym = nil
+			Diag("cannot write %s: %v", p, err)
+			Errorexit()
+		}
+		if err := w.Close(); err != nil {
+			Ctxt.Cursym = nil
+			Diag("cannot close %s: %v", p, err)
+			Errorexit()
+		}
+	}
+	return paths
+}
+
+// archive builds a .a archive from the hostobj object files.
+func archive() {
+	if Buildmode != BuildmodeCArchive {
+		return
+	}
+
+	os.Remove(outfile)
+	argv := []string{"ar", "-q", "-c", outfile}
+	argv = append(argv, hostobjCopy()...)
+	argv = append(argv, fmt.Sprintf("%s/go.o", tmpdir))
+
+	if Debug['v'] != 0 {
+		fmt.Fprintf(&Bso, "archive: %s\n", strings.Join(argv, " "))
+		Bflush(&Bso)
+	}
+
+	if out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+		Ctxt.Cursym = nil
+		Diag("%s: running %s failed: %v\n%s", os.Args[0], argv[0], err, out)
+		Errorexit()
+	}
+}
+
 func hostlink() {
 	if Linkmode != LinkExternal || nerrors > 0 {
+		return
+	}
+	if Buildmode == BuildmodeCArchive {
 		return
 	}
 
 	if extld == "" {
 		extld = "gcc"
 	}
+
 	var argv []string
 	argv = append(argv, extld)
 	switch Thearch.Thechar {
@@ -812,10 +924,11 @@ func hostlink() {
 		argv = append(argv, "-Wl,--rosegment")
 	}
 
-	if Buildmode == BuildmodeCShared {
+	switch Buildmode {
+	case BuildmodeCShared:
 		argv = append(argv, "-Wl,-Bsymbolic")
 		argv = append(argv, "-shared")
-	} else if Buildmode == BuildmodeShared {
+	case BuildmodeShared:
 		// TODO(mwhudson): unless you do this, dynamic relocations fill
 		// out the findfunctab table and for some reason shared libraries
 		// and the executable both define a main function and putting the
@@ -827,11 +940,18 @@ func hostlink() {
 		argv = append(argv, "-shared")
 	}
 
+	if Linkshared && Iself {
+		// We force all symbol resolution to be done at program startup
+		// because lazy PLT resolution can use large amounts of stack at
+		// times we cannot allow it to do so.
+		argv = append(argv, "-znow")
+	}
+
 	argv = append(argv, "-o")
 	argv = append(argv, outfile)
 
-	if rpath != "" {
-		argv = append(argv, fmt.Sprintf("-Wl,-rpath,%s", rpath))
+	if rpath.val != "" {
+		argv = append(argv, fmt.Sprintf("-Wl,-rpath,%s", rpath.val))
 	}
 
 	// Force global symbols to be exported for dlopen, etc.
@@ -843,42 +963,22 @@ func hostlink() {
 		argv = append(argv, "-Qunused-arguments")
 	}
 
-	// already wrote main object file
-	// copy host objects to temporary directory
-	for i, h := range hostobj {
-		f, err := os.Open(h.file)
-		if err != nil {
-			Ctxt.Cursym = nil
-			Diag("cannot reopen %s: %v", h.pn, err)
-			Errorexit()
-		}
-		if _, err := f.Seek(h.off, 0); err != nil {
-			Ctxt.Cursym = nil
-			Diag("cannot seek %s: %v", h.pn, err)
-			Errorexit()
-		}
+	argv = append(argv, hostobjCopy()...)
+	argv = append(argv, fmt.Sprintf("%s/go.o", tmpdir))
 
-		p := fmt.Sprintf("%s/%06d.o", tmpdir, i)
-		argv = append(argv, p)
-		w, err := os.Create(p)
-		if err != nil {
-			Ctxt.Cursym = nil
-			Diag("cannot create %s: %v", p, err)
-			Errorexit()
-		}
-		if _, err := io.CopyN(w, f, h.length); err != nil {
-			Ctxt.Cursym = nil
-			Diag("cannot write %s: %v", p, err)
-			Errorexit()
-		}
-		if err := w.Close(); err != nil {
-			Ctxt.Cursym = nil
-			Diag("cannot close %s: %v", p, err)
-			Errorexit()
+	if Linkshared {
+		for _, shlib := range Ctxt.Shlibs {
+			dir, base := filepath.Split(shlib)
+			argv = append(argv, "-L"+dir)
+			if !rpath.set {
+				argv = append(argv, "-Wl,-rpath="+dir)
+			}
+			base = strings.TrimSuffix(base, ".so")
+			base = strings.TrimPrefix(base, "lib")
+			argv = append(argv, "-l"+base)
 		}
 	}
 
-	argv = append(argv, fmt.Sprintf("%s/go.o", tmpdir))
 	argv = append(argv, ldflag...)
 
 	for _, p := range strings.Fields(extldflags) {
@@ -1027,6 +1127,91 @@ func ldobj(f *Biobuf, pkg string, length int64, pn string, file string, whence i
 
 eof:
 	Diag("truncated object file: %s", pn)
+}
+
+func ldshlibsyms(shlib string) {
+	found := false
+	libpath := ""
+	for _, libdir := range Ctxt.Libdir {
+		libpath = filepath.Join(libdir, shlib)
+		if _, err := os.Stat(libpath); err == nil {
+			found = true
+			break
+		}
+	}
+	if !found {
+		Diag("cannot find shared library: %s", shlib)
+		return
+	}
+	for _, processedname := range Ctxt.Shlibs {
+		if processedname == libpath {
+			return
+		}
+	}
+	if Ctxt.Debugvlog > 1 && Ctxt.Bso != nil {
+		fmt.Fprintf(Ctxt.Bso, "%5.2f ldshlibsyms: found library with name %s at %s\n", obj.Cputime(), shlib, libpath)
+		Bflush(Ctxt.Bso)
+	}
+
+	f, err := elf.Open(libpath)
+	if err != nil {
+		Diag("cannot open shared library: %s", libpath)
+		return
+	}
+	defer f.Close()
+	syms, err := f.DynamicSymbols()
+	if err != nil {
+		Diag("cannot read symbols from shared library: %s", libpath)
+		return
+	}
+	for _, s := range syms {
+		if elf.ST_TYPE(s.Info) == elf.STT_NOTYPE || elf.ST_TYPE(s.Info) == elf.STT_SECTION {
+			continue
+		}
+		if s.Section == elf.SHN_UNDEF {
+			continue
+		}
+		if strings.HasPrefix(s.Name, "_") {
+			continue
+		}
+		lsym := Linklookup(Ctxt, s.Name, 0)
+		if lsym.Type != 0 && lsym.Dupok == 0 {
+			Diag(
+				"Found duplicate symbol %s reading from %s, first found in %s",
+				s.Name, shlib, lsym.File)
+		}
+		lsym.Type = SDYNIMPORT
+		lsym.File = libpath
+	}
+
+	// We might have overwritten some functions above (this tends to happen for the
+	// autogenerated type equality/hashing functions) and we don't want to generated
+	// pcln table entries for these any more so unstitch them from the Textp linked
+	// list.
+	var last *LSym
+
+	for s := Ctxt.Textp; s != nil; s = s.Next {
+		if s.Type == SDYNIMPORT {
+			continue
+		}
+
+		if last == nil {
+			Ctxt.Textp = s
+		} else {
+			last.Next = s
+		}
+		last = s
+	}
+
+	if last == nil {
+		Ctxt.Textp = nil
+		Ctxt.Etextp = nil
+	} else {
+		last.Next = nil
+		Ctxt.Etextp = last
+	}
+
+	Ctxt.Shlibs = append(Ctxt.Shlibs, libpath)
 }
 
 func mywhatsys() {

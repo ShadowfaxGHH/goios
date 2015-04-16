@@ -84,8 +84,7 @@ type Mpcplx struct {
 type Val struct {
 	Ctype int16
 	U     struct {
-		Reg  int16   // OREGISTER
-		Bval int16   // bool value CTBOOL
+		Bval bool    // bool value CTBOOL
 		Xval *Mpint  // int CTINT, rune CTRUNE
 		Fval *Mpflt  // float CTFLT
 		Cval *Mpcplx // float CTCPLX
@@ -769,6 +768,7 @@ type Arch struct {
 	REGRETURN    int // AX
 	REGMIN       int
 	REGMAX       int
+	REGZERO      int // architectural zero register, if available
 	FREGMIN      int
 	FREGMAX      int
 	MAXWIDTH     int64
